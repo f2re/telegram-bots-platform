@@ -20,12 +20,6 @@ fi
 # Source configuration
 source "$CONFIG_FILE"
 
-# Validate configuration
-if ! validate_config 2>/dev/null; then
-    echo "❌ Ошибка валидации конфигурации!"
-    exit 1
-fi
-
 # Colors and Emojis
 RED='\033[0;31m'
 GREEN='\033[0;32m'
