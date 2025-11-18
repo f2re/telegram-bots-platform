@@ -163,7 +163,8 @@ install_prerequisites() {
     export DEBIAN_FRONTEND=noninteractive
     
     log_info "Updating package lists..."
-    apt-get update -qq 2>&1 | spinner $!
+    apt-get update -qq 2>&1 &
+    spinner $!
     
     log_info "Installing essential packages..."
     apt-get install -y -qq \
@@ -184,7 +185,8 @@ install_prerequisites() {
         certbot \
         python3-certbot-nginx \
         jq \
-        2>&1 | spinner $!
+        2>&1 &
+    spinner $!
     
     log_success "Prerequisites installed"
 }
@@ -416,7 +418,8 @@ install_docker() {
     
     log_info "Installing Docker Engine..."
     apt-get update -qq
-    apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin 2>&1 | spinner $!
+    apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-compose-plugin 2>&1 &
+    spinner $!
     
     # Add user to docker group
     local ADMIN_USER=$(get_current_user)
@@ -434,7 +437,8 @@ install_postgresql() {
     log_step "Installing PostgreSQL"
     
     log_info "Installing PostgreSQL $POSTGRES_VERSION..."
-    apt-get install -y -qq postgresql postgresql-contrib postgresql-$POSTGRES_VERSION 2>&1 | spinner $!
+    apt-get install -y -qq postgresql postgresql-contrib postgresql-$POSTGRES_VERSION 2>&1 &
+    spinner $!
     
     # Configure PostgreSQL
     log_info "Configuring PostgreSQL..."
@@ -495,7 +499,8 @@ install_nginx() {
     log_step "Installing Nginx"
     
     log_info "Installing Nginx..."
-    apt-get install -y -qq nginx 2>&1 | spinner $!
+    apt-get install -y -qq nginx 2>&1 &
+    spinner $!
     
     # Create directory structure
     mkdir -p /etc/nginx/sites-enabled
@@ -589,7 +594,8 @@ install_oh_my_zsh() {
         local ADMIN_USER=$(get_current_user)
         
         # Install Zsh
-        apt-get install -y -qq zsh 2>&1 | spinner $!
+        apt-get install -y -qq zsh 2>&1 &
+        spinner $!
         
         # Install Oh My Zsh
         if [ ! -d "/home/$ADMIN_USER/.oh-my-zsh" ]; then
