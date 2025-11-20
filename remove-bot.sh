@@ -25,6 +25,59 @@ log_success() { echo -e "${GREEN}✅ ${NC}$1"; }
 log_warning() { echo -e "${YELLOW}⚠️  ${NC}$1"; }
 log_error() { echo -e "${RED}❌ ${NC}$1"; }
 
+# Get list of bots
+get_bots_list() {
+    local bots=()
+    if [ -d "$BOTS_DIR" ]; then
+        for bot_dir in "$BOTS_DIR"/*; do
+            if [ -d "$bot_dir" ]; then
+                bots+=("$(basename "$bot_dir")")
+            fi
+        done
+    fi
+    echo "${bots[@]}"
+}
+
+# Select bot from menu
+select_bot() {
+    local prompt_msg=${1:-"Выберите бота"}
+
+    # Get available bots
+    local bots=($(get_bots_list))
+
+    if [ ${#bots[@]} -eq 0 ]; then
+        log_error "Боты не найдены в $BOTS_DIR"
+        return 1
+    fi
+
+    echo -e "${CYAN}$prompt_msg:${NC}\n"
+
+    # Show numbered list
+    local i=1
+    for bot in "${bots[@]}"; do
+        echo -e "  ${YELLOW}$i)${NC} $bot"
+        ((i++))
+    done
+
+    echo -e "  ${YELLOW}0)${NC} Отмена"
+    echo ""
+
+    # Get user choice
+    local choice
+    while true; do
+        read -p "$(echo -e ${YELLOW}Ваш выбор [0-$((${#bots[@]}))]: ${NC})" choice
+
+        if [[ "$choice" == "0" ]]; then
+            return 1
+        elif [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#bots[@]} ]; then
+            echo "${bots[$((choice-1))]}"
+            return 0
+        else
+            log_error "Неверный выбор. Введите число от 0 до ${#bots[@]}"
+        fi
+    done
+}
+
 # Banner
 echo -e "${CYAN}"
 cat << "EOF"
@@ -38,7 +91,11 @@ echo -e "${NC}\n"
 
 # Get bot name
 if [ $# -eq 0 ]; then
-    read -p "$(echo -e ${CYAN}Enter bot name to remove: ${NC})" BOT_NAME
+    BOT_NAME=$(select_bot "Выберите бота для удаления")
+    if [ $? -ne 0 ]; then
+        log_warning "Отменено"
+        exit 0
+    fi
 else
     BOT_NAME=$1
 fi

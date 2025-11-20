@@ -128,7 +128,8 @@ prepare_env_template() {
     local bot_dir=$1
     local structure=$2
 
-    log_info "Подготовка шаблона .env..."
+    # Log to stderr so it doesn't go to .env file
+    log_info "Подготовка шаблона .env..." >&2
 
     local env_example=""
 
@@ -146,10 +147,10 @@ prepare_env_template() {
     fi
 
     if [ -n "$env_example" ]; then
-        log_success "Найден .env.example: $env_example"
+        log_success "Найден .env.example: $env_example" >&2
         cat "$env_example"
     else
-        log_warning ".env.example не найден, используется базовый шаблон"
+        log_warning ".env.example не найден, используется базовый шаблон" >&2
         cat << EOF
 # Telegram Bot Token
 BOT_TOKEN=

@@ -38,22 +38,84 @@ EOF
     echo -e "${NC}\n"
 }
 
+# Get list of bots
+get_bots_list() {
+    local bots=()
+    if [ -d "$BOTS_DIR" ]; then
+        for bot_dir in "$BOTS_DIR"/*; do
+            if [ -d "$bot_dir" ]; then
+                bots+=("$(basename "$bot_dir")")
+            fi
+        done
+    fi
+    echo "${bots[@]}"
+}
+
+# Select bot from menu
+select_bot() {
+    local prompt_msg=${1:-"Выберите бота"}
+
+    # Get available bots
+    local bots=($(get_bots_list))
+
+    if [ ${#bots[@]} -eq 0 ]; then
+        log_error "Боты не найдены в $BOTS_DIR"
+        return 1
+    fi
+
+    echo -e "${CYAN}$prompt_msg:${NC}\n"
+
+    # Show numbered list
+    local i=1
+    for bot in "${bots[@]}"; do
+        # Get status
+        if [ -d "$BOTS_DIR/$bot" ]; then
+            cd "$BOTS_DIR/$bot"
+            if docker compose ps --format json 2>/dev/null | grep -q "running"; then
+                status="${GREEN}●${NC}"
+            else
+                status="${RED}●${NC}"
+            fi
+            echo -e "  ${YELLOW}$i)${NC} $status $bot"
+        fi
+        ((i++))
+    done
+
+    echo -e "  ${YELLOW}0)${NC} Отмена"
+    echo ""
+
+    # Get user choice
+    local choice
+    while true; do
+        read -p "$(echo -e ${YELLOW}Ваш выбор [0-$((${#bots[@]}))]: ${NC})" choice
+
+        if [[ "$choice" == "0" ]]; then
+            return 1
+        elif [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#bots[@]} ]; then
+            echo "${bots[$((choice-1))]}"
+            return 0
+        else
+            log_error "Неверный выбор. Введите число от 0 до ${#bots[@]}"
+        fi
+    done
+}
+
 # List all bots
 list_bots() {
     echo -e "${CYAN}📋 Список всех ботов:${NC}\n"
-    
+
     if [ ! -d "$BOTS_DIR" ] || [ -z "$(ls -A $BOTS_DIR 2>/dev/null)" ]; then
         log_warning "Боты не найдены"
         return
     fi
-    
+
     printf "${YELLOW}%-20s %-15s %-20s %-30s${NC}\n" "ИМЯ БОТА" "СТАТУС" "КОНТЕЙНЕРЫ" "ДОМЕН"
     echo "────────────────────────────────────────────────────────────────────────────────────"
-    
+
     for bot_dir in "$BOTS_DIR"/*; do
         if [ -d "$bot_dir" ]; then
             bot_name=$(basename "$bot_dir")
-            
+
             # Get status
             cd "$bot_dir"
             if docker compose ps --format json 2>/dev/null | grep -q "running"; then
@@ -61,13 +123,13 @@ list_bots() {
             else
                 status="${RED}●${NC} Остановлен"
             fi
-            
+
             # Count containers
             container_count=$(docker compose ps -q 2>/dev/null | wc -l)
-            
+
             # Get domain
             domain=$(grep "BOT_DOMAIN" .env 2>/dev/null | cut -d'=' -f2 || echo "N/A")
-            
+
             printf "%-20s %-25s %-20s %-30s\n" "$bot_name" "$status" "$container_count контейнер(ов)" "$domain"
         fi
     done
@@ -264,44 +326,60 @@ show_menu() {
     echo "  0) Выход"
     echo ""
     read -p "$(echo -e ${YELLOW}Ваш выбор: ${NC})" choice
-    
+
     case $choice in
         1)
             list_bots
             ;;
         2)
-            read -p "Имя бота: " bot_name
-            show_bot_info "$bot_name"
+            bot_name=$(select_bot "Информация о боте")
+            if [ $? -eq 0 ]; then
+                show_bot_info "$bot_name"
+            fi
             ;;
         3)
-            read -p "Имя бота: " bot_name
-            start_bot "$bot_name"
+            bot_name=$(select_bot "Запустить бота")
+            if [ $? -eq 0 ]; then
+                start_bot "$bot_name"
+            fi
             ;;
         4)
-            read -p "Имя бота: " bot_name
-            stop_bot "$bot_name"
+            bot_name=$(select_bot "Остановить бота")
+            if [ $? -eq 0 ]; then
+                stop_bot "$bot_name"
+            fi
             ;;
         5)
-            read -p "Имя бота: " bot_name
-            restart_bot "$bot_name"
+            bot_name=$(select_bot "Перезапустить бота")
+            if [ $? -eq 0 ]; then
+                restart_bot "$bot_name"
+            fi
             ;;
         6)
-            read -p "Имя бота: " bot_name
-            read -p "Количество строк [100]: " lines
-            lines=${lines:-100}
-            show_logs "$bot_name" "$lines"
+            bot_name=$(select_bot "Показать логи")
+            if [ $? -eq 0 ]; then
+                read -p "Количество строк [100]: " lines
+                lines=${lines:-100}
+                show_logs "$bot_name" "$lines"
+            fi
             ;;
         7)
-            read -p "Имя бота: " bot_name
-            update_bot "$bot_name"
+            bot_name=$(select_bot "Обновить бота")
+            if [ $? -eq 0 ]; then
+                update_bot "$bot_name"
+            fi
             ;;
         8)
-            read -p "Имя бота: " bot_name
-            rebuild_bot "$bot_name"
+            bot_name=$(select_bot "Пересобрать бота")
+            if [ $? -eq 0 ]; then
+                rebuild_bot "$bot_name"
+            fi
             ;;
         9)
-            read -p "Имя бота: " bot_name
-            backup_bot "$bot_name"
+            bot_name=$(select_bot "Создать резервную копию")
+            if [ $? -eq 0 ]; then
+                backup_bot "$bot_name"
+            fi
             ;;
         0)
             log_info "Выход"
@@ -311,7 +389,7 @@ show_menu() {
             log_error "Неверный выбор"
             ;;
     esac
-    
+
     echo ""
     read -p "Нажмите Enter для продолжения..."
 }
