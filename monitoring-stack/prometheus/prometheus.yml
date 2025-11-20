@@ -1,0 +1,44 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'telegram-bots-platform'
+    environment: 'production'
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Node Exporter - System metrics (CPU, Memory, Disk, Network)
+  - job_name: 'node_exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # PostgreSQL Exporter - Database metrics
+  - job_name: 'postgres_exporter'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+
+  # Nginx Exporter - Web server metrics
+  - job_name: 'nginx_exporter'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+
+  # cAdvisor - Docker container metrics
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+  # Loki - Log aggregation metrics
+  - job_name: 'loki'
+    static_configs:
+      - targets: ['loki:3100']
+
+  # Promtail - Log collector metrics
+  - job_name: 'promtail'
+    static_configs:
+      - targets: ['promtail:9080']
+
+# Bot-specific scrape configs will be added here automatically by the scanner

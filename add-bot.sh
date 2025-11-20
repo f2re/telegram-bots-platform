@@ -854,11 +854,48 @@ save_bot_info() {
     "structure": "$STRUCTURE",
     "backend_port": $BACKEND_PORT,
     $([ "$HAS_FRONTEND" = "true" ] && echo "\"frontend_port\": $FRONTEND_PORT,")
-    "database": "$DB_NAME",
+    "database": {
+        "name": "$DB_NAME",
+        "user": "${BOT_NAME}_user",
+        "host": "172.25.0.1",
+        "port": 5432
+    },
     "repository": "$GIT_REPO",
     "created_at": "$(date -Iseconds)"
 }
 EOF
+}
+
+# Integrate bot with monitoring
+integrate_monitoring() {
+    log_step "Интеграция с системой мониторинга"
+
+    local MONITORING_DIR="/opt/telegram-bots-platform/monitoring-stack"
+    local SCANNER_SCRIPT="$SCRIPT_DIR/scripts/scan-and-monitor-bots.sh"
+
+    # Check if monitoring is deployed
+    if [ ! -d "$MONITORING_DIR" ]; then
+        log_warning "Система мониторинга не развернута"
+        log_info "Вы можете развернуть мониторинг позже с помощью: sudo bash $SCRIPT_DIR/scripts/monitoring-manage.sh deploy"
+        return 0
+    fi
+
+    # Check if monitoring is running
+    if ! docker ps --format '{{.Names}}' | grep -q '^prometheus$'; then
+        log_warning "Система мониторинга не запущена"
+        log_info "Запустите мониторинг: sudo bash $SCRIPT_DIR/scripts/monitoring-manage.sh start"
+        return 0
+    fi
+
+    # Run bot scanner to register this bot
+    if [ -f "$SCANNER_SCRIPT" ]; then
+        log_info "Регистрация бота в системе мониторинга..."
+        bash "$SCANNER_SCRIPT" 2>/dev/null || log_warning "Не удалось зарегистрировать бота в мониторинге"
+        log_success "Бот добавлен в систему мониторинга"
+        log_info "📊 Дашборд бота будет доступен в Grafana через несколько секунд"
+    else
+        log_warning "Скрипт сканирования ботов не найден"
+    fi
 }
 
 # Show completion
@@ -910,6 +947,7 @@ main() {
     obtain_ssl_certificate
     start_bot
     save_bot_info
+    integrate_monitoring
     show_completion
 }
 

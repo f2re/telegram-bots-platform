@@ -719,189 +719,50 @@ EOF
 # Install Monitoring Stack
 install_monitoring() {
     if [ "$MONITORING_ENABLED" = "true" ]; then
-        log_step "Installing Monitoring Stack (Prometheus + Grafana)"
-        
-        mkdir -p /opt/monitoring/{prometheus,grafana}
-        
-        # Create Prometheus configuration
-        cat > /opt/monitoring/prometheus/prometheus.yml << 'EOF'
-global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
+        log_step "Installing Comprehensive Monitoring Stack (Prometheus + Grafana + Loki)"
 
-scrape_configs:
-  - job_name: 'prometheus'
-    static_configs:
-      - targets: ['localhost:9090']
+        local MONITORING_DIR="/opt/telegram-bots-platform/monitoring-stack"
+        local REPO_MONITORING_DIR="$PLATFORM_DIR/monitoring-stack"
 
-  - job_name: 'node_exporter'
-    static_configs:
-      - targets: ['node-exporter:9100']
+        # Check if monitoring stack files exist in repository
+        if [ ! -d "$REPO_MONITORING_DIR" ]; then
+            log_error "Monitoring stack source not found at $REPO_MONITORING_DIR"
+            log_info "Please ensure the repository is up to date"
+            return 1
+        fi
 
-  - job_name: 'postgres_exporter'
-    static_configs:
-      - targets: ['postgres-exporter:9187']
+        # Copy monitoring stack to deployment location
+        log_info "Copying monitoring stack files..."
+        mkdir -p "$(dirname "$MONITORING_DIR")"
+        cp -r "$REPO_MONITORING_DIR" "$MONITORING_DIR"
 
-  - job_name: 'nginx_exporter'
-    static_configs:
-      - targets: ['nginx-exporter:9113']
+        # Generate Grafana password if not exists
+        if [ -f "/root/.platform/monitoring_credentials" ]; then
+            source /root/.platform/monitoring_credentials
+        else
+            GRAFANA_PASSWORD=$(openssl rand -base64 16)
+            mkdir -p /root/.platform
+            echo "GRAFANA_PASSWORD=$GRAFANA_PASSWORD" > /root/.platform/monitoring_credentials
+            chmod 600 /root/.platform/monitoring_credentials
+        fi
 
-  - job_name: 'cadvisor'
-    static_configs:
-      - targets: ['cadvisor:8080']
-EOF
-        
-        # Create Grafana provisioning
-        mkdir -p /opt/monitoring/grafana/provisioning/{datasources,dashboards}
-        
-        cat > /opt/monitoring/grafana/provisioning/datasources/prometheus.yml << 'EOF'
-apiVersion: 1
-
-datasources:
-  - name: Prometheus
-    type: prometheus
-    access: proxy
-    url: http://prometheus:9090
-    isDefault: true
-    editable: true
-EOF
-        
-        cat > /opt/monitoring/grafana/provisioning/dashboards/default.yml << 'EOF'
-apiVersion: 1
-
-providers:
-  - name: 'Default'
-    orgId: 1
-    folder: ''
-    type: file
-    disableDeletion: false
-    updateIntervalSeconds: 10
-    allowUiUpdates: true
-    options:
-      path: /etc/grafana/provisioning/dashboards
-EOF
-        
-        # Create Docker Compose for monitoring
-        cat > /opt/monitoring/docker-compose.yml << EOF
-version: '3.8'
-
-services:
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    restart: unless-stopped
-    volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--storage.tsdb.retention.time=$PROMETHEUS_RETENTION_TIME'
-      - '--web.enable-lifecycle'
-    ports:
-      - "$PROMETHEUS_PORT:9090"
-    networks:
-      - monitoring
-
-  node-exporter:
-    image: prom/node-exporter:latest
-    container_name: node-exporter
-    restart: unless-stopped
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-    command:
-      - '--path.procfs=/host/proc'
-      - '--path.rootfs=/rootfs'
-      - '--path.sysfs=/host/sys'
-      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
-    networks:
-      - monitoring
-
-  postgres-exporter:
-    image: prometheuscommunity/postgres-exporter:latest
-    container_name: postgres-exporter
-    restart: unless-stopped
-    environment:
-      DATA_SOURCE_NAME: "postgresql://postgres:${POSTGRES_PASSWORD}@host.docker.internal:5432/postgres?sslmode=disable"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    networks:
-      - monitoring
-
-  cadvisor:
-    image: gcr.io/cadvisor/cadvisor:latest
-    container_name: cadvisor
-    restart: unless-stopped
-    privileged: true
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker:/var/lib/docker:ro
-      - /dev/disk:/dev/disk:ro
-    devices:
-      - /dev/kmsg
-    networks:
-      - monitoring
-
-  nginx-exporter:
-    image: nginx/nginx-prometheus-exporter:latest
-    container_name: nginx-exporter
-    restart: unless-stopped
-    command:
-      - '-nginx.scrape-uri=http://host.docker.internal:8080/stub_status'
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    networks:
-      - monitoring
-
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    restart: unless-stopped
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
-      - GF_USERS_ALLOW_SIGN_UP=$GRAFANA_ALLOW_SIGN_UP
-      - GF_SERVER_ROOT_URL=http://localhost:$GRAFANA_PORT
-      - GF_INSTALL_PLUGINS=
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning
-    ports:
-      - "$GRAFANA_PORT:3000"
-    networks:
-      - monitoring
-    depends_on:
-      - prometheus
-
-volumes:
-  prometheus_data:
-  grafana_data:
-
-networks:
-  monitoring:
-    driver: bridge
-EOF
-        
-        # Set environment variable for Postgres password
+        # Load PostgreSQL credentials
         source /root/.platform/postgres_credentials
-        export POSTGRES_PASSWORD
-        export GRAFANA_PASSWORD=$GRAFANA_ADMIN_PASSWORD
-        
-        # Save Grafana password
-        echo "GRAFANA_PASSWORD=$GRAFANA_PASSWORD" >> /root/.platform/monitoring_credentials
-        chmod 600 /root/.platform/monitoring_credentials
-        
-        # Add Nginx status endpoint
-        cat > /etc/nginx/conf.d/status.conf << EOF
+
+        # Create .env file for docker-compose
+        cat > "$MONITORING_DIR/.env" << EOF
+POSTGRES_USER=${POSTGRES_USER:-postgres}
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+GRAFANA_PASSWORD=${GRAFANA_PASSWORD}
+EOF
+
+        # Add Nginx status endpoint for monitoring
+        log_info "Configuring Nginx status endpoint..."
+        cat > /etc/nginx/conf.d/status.conf << 'EOF'
 server {
     listen 8080;
     server_name localhost;
-    
+
     location /stub_status {
         stub_status on;
         access_log off;
@@ -911,17 +772,43 @@ server {
     }
 }
 EOF
-        
-        nginx -s reload
-        
+
+        nginx -s reload 2>/dev/null || systemctl reload nginx
+
         # Start monitoring stack
-        cd /opt/monitoring
+        log_info "Starting monitoring services..."
+        cd "$MONITORING_DIR"
         docker compose up -d
-        
-        log_success "Monitoring stack installed"
-        echo -e "\n${YELLOW}📊 Grafana credentials saved to: /root/.platform/monitoring_credentials${NC}"
-        echo -e "${YELLOW}📊 Access Grafana at: http://$(curl -s ifconfig.me):$GRAFANA_PORT${NC}"
-        echo -e "${YELLOW}📊 Default username: admin${NC}\n"
+
+        # Wait for services to initialize
+        log_info "Waiting for services to initialize..."
+        sleep 10
+
+        log_success "Monitoring stack installed successfully!"
+        echo ""
+        echo -e "${YELLOW}╔════════════════════════════════════════════════════╗${NC}"
+        echo -e "${YELLOW}║          📊 MONITORING SYSTEM DEPLOYED 📊         ║${NC}"
+        echo -e "${YELLOW}╚════════════════════════════════════════════════════╝${NC}"
+        echo ""
+        echo -e "${CYAN}🌐 Access URLs:${NC}"
+        echo -e "  ${GREEN}Grafana:${NC}    http://$(curl -s ifconfig.me 2>/dev/null || echo 'your-server-ip'):3000"
+        echo -e "  ${GREEN}Prometheus:${NC} http://$(curl -s ifconfig.me 2>/dev/null || echo 'your-server-ip'):9090"
+        echo ""
+        echo -e "${CYAN}🔐 Grafana Login:${NC}"
+        echo -e "  ${GREEN}Username:${NC} admin"
+        echo -e "  ${GREEN}Password:${NC} $GRAFANA_PASSWORD"
+        echo ""
+        echo -e "${YELLOW}💡 Credentials saved to: /root/.platform/monitoring_credentials${NC}"
+        echo ""
+        echo -e "${CYAN}📊 Available Dashboards:${NC}"
+        echo -e "  • System Overview (CPU, Memory, Disk, Network)"
+        echo -e "  • PostgreSQL Monitoring (Connections, Transactions, Cache)"
+        echo -e "  • Bots Overview (All bots at a glance)"
+        echo -e "  • Logs Dashboard (Aggregated logs from all services)"
+        echo ""
+        echo -e "${CYAN}🔧 Management Commands:${NC}"
+        echo -e "  ${GREEN}sudo bash $PLATFORM_DIR/scripts/monitoring-manage.sh${NC}"
+        echo ""
     else
         log_info "Monitoring installation is disabled in config"
     fi
