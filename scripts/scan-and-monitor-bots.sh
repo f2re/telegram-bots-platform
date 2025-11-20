@@ -1,13 +1,13 @@
 #!/bin/bash
 
 # ========================================
-# 🔍 Bot Scanner & Monitoring Integration
-# Automatically discovers and monitors all bots
+# 🔍 Сканер Ботов и Интеграция с Мониторингом
+# Автоматическое обнаружение и мониторинг всех ботов
 # ========================================
 
 set -euo pipefail
 
-# Colors
+# Цвета
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -22,51 +22,51 @@ log_warning() { echo -e "${YELLOW}⚠️  ${NC}$1"; }
 log_error() { echo -e "${RED}❌ ${NC}$1"; }
 log_step() { echo -e "${MAGENTA}▶️  ${NC}$1"; }
 
-# Configuration
+# Конфигурация
 BOTS_DIR="/opt/telegram-bots-platform/bots"
 MONITORING_DIR="/opt/telegram-bots-platform/monitoring-stack"
 PROMETHEUS_CONFIG="$MONITORING_DIR/prometheus/prometheus.yml"
 DOCKER_COMPOSE="$MONITORING_DIR/docker-compose.yml"
 GRAFANA_DASHBOARDS="$MONITORING_DIR/grafana/dashboards"
 
-# Check if monitoring stack is deployed
+# Проверка развернута ли система мониторинга
 if [ ! -d "$MONITORING_DIR" ]; then
-    log_error "Monitoring stack not found at $MONITORING_DIR"
-    log_info "Please deploy the monitoring stack first"
+    log_error "Система мониторинга не найдена по адресу $MONITORING_DIR"
+    log_info "Пожалуйста, сначала разверните систему мониторинга"
     exit 1
 fi
 
-# Check if bots directory exists
+# Проверка существует ли директория ботов
 if [ ! -d "$BOTS_DIR" ]; then
-    log_warning "Bots directory not found at $BOTS_DIR"
-    log_info "No bots to scan. This is normal for a fresh installation."
+    log_warning "Директория ботов не найдена по адресу $BOTS_DIR"
+    log_info "Нет ботов для сканирования. Это нормально для новой установки."
     exit 0
 fi
 
-# Load PostgreSQL credentials
+# Загрузка учетных данных PostgreSQL
 if [ -f "/root/.platform/postgres_credentials" ]; then
     source /root/.platform/postgres_credentials
 else
-    log_error "PostgreSQL credentials not found!"
+    log_error "Учетные данные PostgreSQL не найдены!"
     exit 1
 fi
 
-log_step "🔍 Scanning for bots in $BOTS_DIR..."
+log_step "🔍 Сканирование ботов в $BOTS_DIR..."
 
-# Count bots
+# Счетчики ботов
 BOT_COUNT=0
 MONITORED_COUNT=0
 
-# Remove old bot-specific scrape configs from Prometheus
+# Удаление старых конфигураций ботов из Prometheus
 if [ -f "$PROMETHEUS_CONFIG" ]; then
-    # Create a backup
+    # Создание резервной копии
     cp "$PROMETHEUS_CONFIG" "$PROMETHEUS_CONFIG.bak"
 
-    # Remove all bot-specific configs (everything after the "# Bot-specific" comment)
+    # Удаление всех конфигураций ботов (все после комментария "# Bot-specific")
     sed -i '/# Bot-specific scrape configs/q' "$PROMETHEUS_CONFIG"
 fi
 
-# Iterate through all bot directories
+# Перебор всех директорий ботов
 for bot_dir in "$BOTS_DIR"/*; do
     if [ ! -d "$bot_dir" ]; then
         continue
@@ -76,30 +76,30 @@ for bot_dir in "$BOTS_DIR"/*; do
     BOT_INFO_FILE="$bot_dir/bot_info.json"
 
     if [ ! -f "$BOT_INFO_FILE" ]; then
-        log_warning "Skipping $BOT_NAME: bot_info.json not found"
+        log_warning "Пропуск $BOT_NAME: bot_info.json не найден"
         continue
     fi
 
     BOT_COUNT=$((BOT_COUNT + 1))
-    log_info "Found bot: $BOT_NAME"
+    log_info "Найден бот: $BOT_NAME"
 
-    # Extract bot information from bot_info.json
+    # Извлечение информации о боте из bot_info.json
     if command -v jq &> /dev/null; then
         DB_NAME=$(jq -r '.database.name // empty' "$BOT_INFO_FILE" 2>/dev/null || echo "${BOT_NAME}_db")
-        BACKEND_PORT=$(jq -r '.ports.backend // empty' "$BOT_INFO_FILE" 2>/dev/null || echo "")
+        BACKEND_PORT=$(jq -r '.backend_port // empty' "$BOT_INFO_FILE" 2>/dev/null || echo "")
         DOMAIN=$(jq -r '.domain // empty' "$BOT_INFO_FILE" 2>/dev/null || echo "")
     else
-        # Fallback if jq is not available
+        # Запасной вариант если jq недоступен
         DB_NAME="${BOT_NAME}_db"
-        BACKEND_PORT=$(grep -oP '"backend":\s*\K\d+' "$BOT_INFO_FILE" 2>/dev/null || echo "")
+        BACKEND_PORT=$(grep -oP '"backend_port":\s*\K\d+' "$BOT_INFO_FILE" 2>/dev/null || echo "")
         DOMAIN=$(grep -oP '"domain":\s*"\K[^"]+' "$BOT_INFO_FILE" 2>/dev/null || echo "")
     fi
 
-    log_info "  Database: $DB_NAME"
-    log_info "  Backend Port: ${BACKEND_PORT:-N/A}"
-    log_info "  Domain: ${DOMAIN:-N/A}"
+    log_info "  База данных: $DB_NAME"
+    log_info "  Порт Backend: ${BACKEND_PORT:-Н/Д}"
+    log_info "  Домен: ${DOMAIN:-Н/Д}"
 
-    # Add Prometheus scrape config for this bot (if it has metrics endpoint)
+    # Добавление конфигурации Prometheus для этого бота (если есть endpoint метрик)
     if [ -n "$BACKEND_PORT" ]; then
         cat >> "$PROMETHEUS_CONFIG" << EOF
 
@@ -113,50 +113,50 @@ for bot_dir in "$BOTS_DIR"/*; do
     metrics_path: '/metrics'
     scrape_timeout: 10s
 EOF
-        log_success "  Added Prometheus scrape config"
+        log_success "  Добавлена конфигурация Prometheus"
     fi
 
-    # Create bot-specific dashboard
+    # Создание дашборда для бота
     create_bot_dashboard "$BOT_NAME" "$DB_NAME"
 
-    # Add PostgreSQL exporter for this bot's database
+    # Добавление PostgreSQL exporter для базы данных бота
     add_postgres_exporter "$BOT_NAME" "$DB_NAME"
 
     MONITORED_COUNT=$((MONITORED_COUNT + 1))
-    log_success "✅ $BOT_NAME monitoring configured"
+    log_success "✅ Мониторинг настроен для $BOT_NAME"
     echo ""
 done
 
-log_step "📊 Monitoring Summary"
-log_info "Total bots found: $BOT_COUNT"
-log_success "Bots configured for monitoring: $MONITORED_COUNT"
+log_step "📊 Сводка по Мониторингу"
+log_info "Всего найдено ботов: $BOT_COUNT"
+log_success "Настроено мониторинга: $MONITORED_COUNT"
 
-# Restart monitoring services to apply changes
+# Перезапуск сервисов мониторинга для применения изменений
 if [ $MONITORED_COUNT -gt 0 ]; then
-    log_step "🔄 Restarting monitoring services..."
+    log_step "🔄 Перезапуск сервисов мониторинга..."
 
     cd "$MONITORING_DIR"
 
-    # Reload Prometheus configuration
+    # Перезагрузка конфигурации Prometheus
     if docker ps --format '{{.Names}}' | grep -q '^prometheus$'; then
-        docker exec prometheus kill -HUP 1 2>/dev/null && log_success "Prometheus reloaded" || log_warning "Failed to reload Prometheus"
+        docker exec prometheus kill -HUP 1 2>/dev/null && log_success "Prometheus перезагружен" || log_warning "Не удалось перезагрузить Prometheus"
     fi
 
-    # Restart docker-compose to add new exporters
-    docker compose up -d 2>/dev/null && log_success "Monitoring stack updated" || log_warning "Failed to update monitoring stack"
+    # Перезапуск docker-compose для добавления новых экспортеров
+    docker compose up -d 2>/dev/null && log_success "Стек мониторинга обновлен" || log_warning "Не удалось обновить стек мониторинга"
 
-    log_success "\n✅ All bots are now being monitored!"
+    log_success "\n✅ Все боты теперь мониторятся!"
     echo ""
-    log_info "📊 Access your dashboards:"
+    log_info "📊 Доступ к дашбордам:"
     log_info "   • Grafana: http://$(curl -s ifconfig.me 2>/dev/null || echo 'your-server-ip'):3000"
     log_info "   • Prometheus: http://$(curl -s ifconfig.me 2>/dev/null || echo 'your-server-ip'):9090"
     echo ""
-    log_info "🔐 Grafana credentials are stored in: /root/.platform/monitoring_credentials"
+    log_info "🔐 Учетные данные Grafana хранятся в: /root/.platform/monitoring_credentials"
 else
-    log_warning "No bots found to monitor"
+    log_warning "Боты для мониторинга не найдены"
 fi
 
-# Function to create bot-specific dashboard
+# Функция создания дашборда для конкретного бота
 create_bot_dashboard() {
     local BOT_NAME=$1
     local DB_NAME=$2
@@ -190,8 +190,8 @@ create_bot_dashboard() {
         "defaults": {
           "color": {"mode": "thresholds"},
           "mappings": [
-            {"options": {"0": {"text": "DOWN"}}, "type": "value"},
-            {"options": {"1": {"text": "UP"}}, "type": "value"}
+            {"options": {"0": {"text": "ВЫКЛ"}}, "type": "value"},
+            {"options": {"1": {"text": "ВКЛ"}}, "type": "value"}
           ],
           "thresholds": {
             "mode": "absolute",
@@ -221,7 +221,7 @@ create_bot_dashboard() {
           "refId": "A"
         }
       ],
-      "title": "Bot Status",
+      "title": "Статус Бота",
       "type": "gauge"
     },
     {
@@ -259,7 +259,7 @@ create_bot_dashboard() {
           "refId": "A"
         }
       ],
-      "title": "DB Connections",
+      "title": "Подключения к БД",
       "type": "gauge"
     },
     {
@@ -295,7 +295,7 @@ create_bot_dashboard() {
           "refId": "A"
         }
       ],
-      "title": "DB Size",
+      "title": "Размер БД",
       "type": "gauge"
     },
     {
@@ -331,7 +331,7 @@ create_bot_dashboard() {
           "refId": "A"
         }
       ],
-      "title": "Memory Usage",
+      "title": "Использование Памяти",
       "type": "gauge"
     },
     {
@@ -377,7 +377,7 @@ create_bot_dashboard() {
           "refId": "A"
         }
       ],
-      "title": "CPU Usage",
+      "title": "Использование CPU",
       "type": "timeseries"
     },
     {
@@ -423,7 +423,7 @@ create_bot_dashboard() {
           "refId": "A"
         }
       ],
-      "title": "Memory Usage",
+      "title": "Использование Памяти",
       "type": "timeseries"
     },
     {
@@ -465,16 +465,16 @@ create_bot_dashboard() {
       "targets": [
         {
           "expr": "rate(container_network_receive_bytes_total{name=~\".*$BOT_NAME.*\"}[5m])",
-          "legendFormat": "{{name}} RX",
+          "legendFormat": "{{name}} Прием",
           "refId": "A"
         },
         {
           "expr": "rate(container_network_transmit_bytes_total{name=~\".*$BOT_NAME.*\"}[5m])",
-          "legendFormat": "{{name}} TX",
+          "legendFormat": "{{name}} Передача",
           "refId": "B"
         }
       ],
-      "title": "Network I/O",
+      "title": "Сетевой I/O",
       "type": "timeseries"
     },
     {
@@ -516,16 +516,16 @@ create_bot_dashboard() {
       "targets": [
         {
           "expr": "rate(pg_stat_database_xact_commit{datname=\"$DB_NAME\"}[5m])",
-          "legendFormat": "Commits",
+          "legendFormat": "Коммиты",
           "refId": "A"
         },
         {
           "expr": "rate(pg_stat_database_xact_rollback{datname=\"$DB_NAME\"}[5m])",
-          "legendFormat": "Rollbacks",
+          "legendFormat": "Откаты",
           "refId": "B"
         }
       ],
-      "title": "Database Transactions",
+      "title": "Транзакции БД",
       "type": "timeseries"
     },
     {
@@ -548,7 +548,7 @@ create_bot_dashboard() {
           "refId": "A"
         }
       ],
-      "title": "Recent Logs",
+      "title": "Последние Логи",
       "type": "logs"
     }
   ],
@@ -560,28 +560,28 @@ create_bot_dashboard() {
   "time": {"from": "now-1h", "to": "now"},
   "timepicker": {},
   "timezone": "",
-  "title": "$BOT_NAME Dashboard",
+  "title": "Дашборд $BOT_NAME",
   "uid": "$BOT_UID",
   "version": 0,
   "weekStart": ""
 }
 EOF
 
-    log_success "  Created dashboard: $DASHBOARD_FILE"
+    log_success "  Создан дашборд: $DASHBOARD_FILE"
 }
 
-# Function to add PostgreSQL exporter for bot database
+# Функция добавления PostgreSQL exporter для базы данных бота
 add_postgres_exporter() {
     local BOT_NAME=$1
     local DB_NAME=$2
 
-    # Check if exporter already exists in docker-compose
+    # Проверка существует ли exporter в docker-compose
     if grep -q "${BOT_NAME}_postgres_exporter" "$DOCKER_COMPOSE" 2>/dev/null; then
-        log_info "  PostgreSQL exporter already exists for $BOT_NAME"
+        log_info "  PostgreSQL exporter уже существует для $BOT_NAME"
         return
     fi
 
-    # Add the exporter service
+    # Добавление сервиса exporter
     cat >> "$DOCKER_COMPOSE" << EOF
 
   ${BOT_NAME}_postgres_exporter:
@@ -596,7 +596,7 @@ add_postgres_exporter() {
       - monitoring
 EOF
 
-    # Add to Prometheus scrape config
+    # Добавление в конфигурацию Prometheus
     cat >> "$PROMETHEUS_CONFIG" << EOF
 
   - job_name: '${BOT_NAME}_postgres'
@@ -607,7 +607,7 @@ EOF
           service: 'postgres'
 EOF
 
-    log_success "  Added PostgreSQL exporter for $DB_NAME"
+    log_success "  Добавлен PostgreSQL exporter для $DB_NAME"
 }
 
-log_success "\n🎉 Bot scanning and monitoring setup complete!"
+log_success "\n🎉 Сканирование и настройка мониторинга завершены!"

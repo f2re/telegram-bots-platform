@@ -67,15 +67,21 @@ show_main_menu() {
     echo -e "    ${WHITE}9${NC})  Статус системы"
     echo ""
 
+    echo -e "  ${MAGENTA}▸ МОНИТОРИНГ${NC}"
+    echo -e "    ${WHITE}10${NC}) 📊 Управление мониторингом"
+    echo -e "    ${WHITE}11${NC}) 🔍 Сканировать и добавить ботов"
+    echo -e "    ${WHITE}12${NC}) 📈 Показать статус мониторинга"
+    echo ""
+
     echo -e "  ${MAGENTA}▸ ДОПОЛНИТЕЛЬНО${NC}"
-    echo -e "    ${WHITE}10${NC}) Удалить компонент"
-    echo -e "    ${WHITE}11${NC}) Перезапустить все сервисы"
+    echo -e "    ${WHITE}13${NC}) Удалить компонент"
+    echo -e "    ${WHITE}14${NC}) Перезапустить все сервисы"
     echo ""
 
     echo -e "  ${RED}0${NC})  Выход"
     echo ""
     echo -e "${GRAY}──────────────────────────────────────────────────────────${NC}"
-    read -p "$(echo -e "  ${BOLD}${WHITE}Ваш выбор${NC} [${CYAN}0-11${NC}]: ")" choice
+    read -p "$(echo -e "  ${BOLD}${WHITE}Ваш выбор${NC} [${CYAN}0-14${NC}]: ")" choice
 
     case $choice in
         1) full_server_setup ;;
@@ -87,8 +93,11 @@ show_main_menu() {
         7) show_credentials ;;
         8) fix_permissions ;;
         9) system_status ;;
-        10) remove_component_menu ;;
-        11) restart_all ;;
+        10) monitoring_menu ;;
+        11) scan_bots ;;
+        12) monitoring_status ;;
+        13) remove_component_menu ;;
+        14) restart_all ;;
         0)
             echo ""
             log_info "Выход из системы управления..."
@@ -96,7 +105,7 @@ show_main_menu() {
             exit 0
             ;;
         *)
-            log_error "Неверный выбор. Пожалуйста, введите число от 0 до 11"
+            log_error "Неверный выбор. Пожалуйста, введите число от 0 до 14"
             sleep 2
             ;;
     esac
@@ -130,7 +139,7 @@ component_setup() {
     echo -e "  ${WHITE}2${NC})  Docker - Контейнеризация"
     echo -e "  ${WHITE}3${NC})  Nginx - Веб-сервер"
     echo -e "  ${WHITE}4${NC})  Статическая сеть Docker (172.25.0.1)"
-    echo -e "  ${WHITE}5${NC})  Мониторинг (Prometheus + Grafana)"
+    echo -e "  ${WHITE}5${NC})  📊 Мониторинг (Grafana + Prometheus + Loki)"
     echo -e "  ${WHITE}6${NC})  SSL сертификаты (Let's Encrypt)"
     echo ""
     echo -e "  ${RED}0${NC})  Назад в главное меню"
@@ -256,10 +265,54 @@ setup_monitoring() {
     log_info "Установка стека мониторинга..."
     echo ""
 
-    if [ -f "$SCRIPT_DIR/scripts/monitoring.sh" ]; then
-        "$SCRIPT_DIR/scripts/monitoring.sh"
+    if [ -f "$SCRIPT_DIR/scripts/monitoring-manage.sh" ]; then
+        bash "$SCRIPT_DIR/scripts/monitoring-manage.sh" deploy
     else
         log_warning "Скрипт мониторинга не найден"
+    fi
+}
+
+# Меню управления мониторингом
+monitoring_menu() {
+    if [ -f "$SCRIPT_DIR/scripts/monitoring-manage.sh" ]; then
+        bash "$SCRIPT_DIR/scripts/monitoring-manage.sh"
+    else
+        log_error "Файл monitoring-manage.sh не найден"
+        echo ""
+        log_info "Система мониторинга не установлена"
+        echo ""
+        read -p "Хотите установить мониторинг сейчас? (y/n): " -n 1 -r
+        echo ""
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            setup_monitoring
+        fi
+    fi
+}
+
+# Сканировать ботов для мониторинга
+scan_bots() {
+    echo ""
+    log_info "Сканирование ботов для мониторинга..."
+    echo ""
+
+    if [ -f "$SCRIPT_DIR/scripts/scan-and-monitor-bots.sh" ]; then
+        bash "$SCRIPT_DIR/scripts/scan-and-monitor-bots.sh"
+    else
+        log_error "Файл scan-and-monitor-bots.sh не найден"
+    fi
+}
+
+# Статус мониторинга
+monitoring_status() {
+    echo ""
+    log_info "Проверка статуса мониторинга..."
+    echo ""
+
+    if [ -f "$SCRIPT_DIR/scripts/monitoring-manage.sh" ]; then
+        bash "$SCRIPT_DIR/scripts/monitoring-manage.sh" status
+    else
+        log_error "Файл monitoring-manage.sh не найден"
+        log_info "Система мониторинга не установлена"
     fi
 }
 
