@@ -42,34 +42,36 @@ select_bot() {
     local bots=($(get_bots_list))
 
     if [ ${#bots[@]} -eq 0 ]; then
-        log_error "Боты не найдены в $BOTS_DIR"
+        log_error "Боты не найдены в $BOTS_DIR" >&2
         return 1
     fi
 
-    echo -e "${CYAN}$prompt_msg:${NC}\n"
+    # Output menu to stderr so it doesn't get captured
+    echo -e "${CYAN}$prompt_msg:${NC}\n" >&2
 
     # Show numbered list
     local i=1
     for bot in "${bots[@]}"; do
-        echo -e "  ${YELLOW}$i)${NC} $bot"
+        echo -e "  ${YELLOW}$i)${NC} $bot" >&2
         ((i++))
     done
 
-    echo -e "  ${YELLOW}0)${NC} Отмена"
-    echo ""
+    echo -e "  ${YELLOW}0)${NC} Отмена" >&2
+    echo "" >&2
 
     # Get user choice
     local choice
     while true; do
-        read -p "$(echo -e ${YELLOW}Ваш выбор [0-$((${#bots[@]}))]: ${NC})" choice
+        read -p "$(echo -e ${YELLOW}Ваш выбор [0-$((${#bots[@]}))]: ${NC})" choice </dev/tty
 
         if [[ "$choice" == "0" ]]; then
             return 1
         elif [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#bots[@]} ]; then
+            # Only the selected bot name goes to stdout
             echo "${bots[$((choice-1))]}"
             return 0
         else
-            log_error "Неверный выбор. Введите число от 0 до ${#bots[@]}"
+            log_error "Неверный выбор. Введите число от 0 до ${#bots[@]}" >&2
         fi
     done
 }
