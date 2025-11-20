@@ -22,8 +22,7 @@ log_warning() { echo -e "${YELLOW}⚠️  ${NC}$1"; }
 log_error() { echo -e "${RED}❌ ${NC}$1"; }
 log_step() { echo -e "${MAGENTA}▶️  ${NC}$1"; }
 
-# Конфигурация
-BOTS_DIR="/opt/telegram-bots-platform/bots"
+# Конфигурация мониторинга
 MONITORING_DIR="/opt/telegram-bots-platform/monitoring-stack"
 PROMETHEUS_CONFIG="$MONITORING_DIR/prometheus/prometheus.yml"
 DOCKER_COMPOSE="$MONITORING_DIR/docker-compose.yml"
@@ -36,11 +35,42 @@ if [ ! -d "$MONITORING_DIR" ]; then
     exit 1
 fi
 
-# Проверка существует ли директория ботов
-if [ ! -d "$BOTS_DIR" ]; then
-    log_warning "Директория ботов не найдена по адресу $BOTS_DIR"
-    log_info "Нет ботов для сканирования. Это нормально для новой установки."
-    exit 0
+# Поиск директории с ботами
+BOTS_DIR=""
+
+# Пробуем разные локации
+if [ -d "/opt/telegram-bots-platform/bots" ]; then
+    BOTS_DIR="/opt/telegram-bots-platform/bots"
+elif [ -d "$HOME/telegram-bots/bots" ]; then
+    BOTS_DIR="$HOME/telegram-bots/bots"
+elif [ -d "$HOME/bots" ]; then
+    BOTS_DIR="$HOME/bots"
+elif [ -d "/var/www/bots" ]; then
+    BOTS_DIR="/var/www/bots"
+fi
+
+# Если не нашли автоматически, спросим у пользователя
+if [ -z "$BOTS_DIR" ] || [ ! -d "$BOTS_DIR" ]; then
+    log_warning "Не удалось автоматически найти директорию с ботами"
+    echo ""
+    log_info "Пробовали следующие локации:"
+    echo "  - /opt/telegram-bots-platform/bots"
+    echo "  - $HOME/telegram-bots/bots"
+    echo "  - $HOME/bots"
+    echo "  - /var/www/bots"
+    echo ""
+
+    read -p "Введите полный путь к директории с ботами (или Enter для пропуска): " BOTS_DIR
+
+    if [ -z "$BOTS_DIR" ]; then
+        log_info "Сканирование отменено"
+        exit 0
+    fi
+
+    if [ ! -d "$BOTS_DIR" ]; then
+        log_error "Директория не найдена: $BOTS_DIR"
+        exit 1
+    fi
 fi
 
 # Загрузка учетных данных PostgreSQL
