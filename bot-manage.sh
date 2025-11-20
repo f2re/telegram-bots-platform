@@ -16,6 +16,7 @@ MAGENTA='\033[0;35m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BOTS_DIR="/opt/telegram-bots-platform/bots"
 
 # Logging functions
@@ -325,6 +326,7 @@ show_menu() {
     echo "  7) Обновить бота (git pull + rebuild)"
     echo "  8) Пересобрать бота"
     echo "  9) Создать резервную копию"
+    echo "  10) 🔐 Показать учетные данные"
     echo "  0) Выход"
     echo ""
     read -p "$(echo -e ${YELLOW}Ваш выбор: ${NC})" choice
@@ -382,6 +384,9 @@ show_menu() {
             if [ $? -eq 0 ]; then
                 backup_bot "$bot_name"
             fi
+            ;;
+        10)
+            "$SCRIPT_DIR/show-credentials.sh" all
             ;;
         0)
             log_info "Выход"

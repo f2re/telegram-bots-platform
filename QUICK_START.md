@@ -1,5 +1,37 @@
 # 🚀 Quick Start - Bot Management
 
+## 🔐 View All Credentials
+
+**Quick access to all passwords, URLs, and connection info:**
+
+```bash
+sudo ./show-credentials.sh
+```
+
+This shows:
+- PostgreSQL admin & bot database credentials
+- Grafana dashboard (URL + login)
+- Prometheus monitoring URLs
+- Redis connection details
+- Nginx configs & SSL certificates
+- Docker containers status
+- Bot tokens (masked for security)
+- All config file paths
+
+**Command line usage:**
+```bash
+sudo ./show-credentials.sh all        # Show everything
+sudo ./show-credentials.sh postgres   # Just PostgreSQL
+sudo ./show-credentials.sh grafana    # Just Grafana
+sudo ./show-credentials.sh export     # Export to file
+```
+
+Also available from:
+- Bot management menu (option 10)
+- Platform orchestrator (option 7)
+
+---
+
 ## Managing Your Bots
 
 ### Easy Way (Recommended)
