@@ -1,0 +1,17 @@
+#!/bin/bash
+
+# ========================================
+# Bot Control Wrapper
+# Ensures proper permissions and execution
+# ========================================
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Check if running with sudo
+if [[ $EUID -ne 0 ]]; then
+    echo "🔐 Требуются права root. Запуск с sudo..."
+    exec sudo "$0" "$@"
+fi
+
+# Run bot management script
+exec "$SCRIPT_DIR/bot-manage.sh" "$@"
