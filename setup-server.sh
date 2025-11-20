@@ -722,14 +722,32 @@ install_monitoring() {
         log_step "Installing Comprehensive Monitoring Stack (Prometheus + Grafana + Loki)"
 
         local MONITORING_DIR="/opt/telegram-bots-platform/monitoring-stack"
-        local REPO_MONITORING_DIR="$PLATFORM_DIR/monitoring-stack"
+        local REPO_MONITORING_DIR=""
 
-        # Check if monitoring stack files exist in repository
-        if [ ! -d "$REPO_MONITORING_DIR" ]; then
-            log_error "Monitoring stack source not found at $REPO_MONITORING_DIR"
-            log_info "Please ensure the repository is up to date"
+        # Find monitoring stack source (try multiple locations)
+        if [ -d "$SCRIPT_DIR/monitoring-stack" ]; then
+            REPO_MONITORING_DIR="$SCRIPT_DIR/monitoring-stack"
+        elif [ -d "/home/user/telegram-bots-platform/monitoring-stack" ]; then
+            REPO_MONITORING_DIR="/home/user/telegram-bots-platform/monitoring-stack"
+        elif [ -d "$PLATFORM_DIR/monitoring-stack" ]; then
+            REPO_MONITORING_DIR="$PLATFORM_DIR/monitoring-stack"
+        elif [ -d "$(pwd)/monitoring-stack" ]; then
+            REPO_MONITORING_DIR="$(pwd)/monitoring-stack"
+        fi
+
+        # Check if monitoring stack files exist
+        if [ -z "$REPO_MONITORING_DIR" ] || [ ! -d "$REPO_MONITORING_DIR" ]; then
+            log_error "Monitoring stack source not found!"
+            log_error "Searched locations:"
+            log_error "  - $SCRIPT_DIR/monitoring-stack"
+            log_error "  - /home/user/telegram-bots-platform/monitoring-stack"
+            log_error "  - $PLATFORM_DIR/monitoring-stack"
+            log_error "  - $(pwd)/monitoring-stack"
+            log_info "Please ensure the repository contains the monitoring-stack directory"
             return 1
         fi
+
+        log_info "Found monitoring stack at: $REPO_MONITORING_DIR"
 
         # Copy monitoring stack to deployment location
         log_info "Copying monitoring stack files..."
