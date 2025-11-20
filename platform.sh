@@ -69,19 +69,20 @@ show_main_menu() {
 
     echo -e "  ${MAGENTA}▸ МОНИТОРИНГ${NC}"
     echo -e "    ${WHITE}10${NC}) 📊 Управление мониторингом"
-    echo -e "    ${WHITE}11${NC}) 🔍 Сканировать и добавить ботов"
-    echo -e "    ${WHITE}12${NC}) 📈 Показать статус мониторинга"
+    echo -e "    ${WHITE}11${NC}) 🔧 Создать bot_info.json для существующих ботов"
+    echo -e "    ${WHITE}12${NC}) 🔍 Сканировать и добавить ботов в мониторинг"
+    echo -e "    ${WHITE}13${NC}) 📈 Показать статус мониторинга"
     echo ""
 
     echo -e "  ${MAGENTA}▸ ДОПОЛНИТЕЛЬНО${NC}"
-    echo -e "    ${WHITE}13${NC}) Удалить компонент"
-    echo -e "    ${WHITE}14${NC}) Перезапустить все сервисы"
+    echo -e "    ${WHITE}14${NC}) Удалить компонент"
+    echo -e "    ${WHITE}15${NC}) Перезапустить все сервисы"
     echo ""
 
     echo -e "  ${RED}0${NC})  Выход"
     echo ""
     echo -e "${GRAY}──────────────────────────────────────────────────────────${NC}"
-    read -p "$(echo -e "  ${BOLD}${WHITE}Ваш выбор${NC} [${CYAN}0-14${NC}]: ")" choice
+    read -p "$(echo -e "  ${BOLD}${WHITE}Ваш выбор${NC} [${CYAN}0-15${NC}]: ")" choice
 
     case $choice in
         1) full_server_setup ;;
@@ -94,10 +95,11 @@ show_main_menu() {
         8) fix_permissions ;;
         9) system_status ;;
         10) monitoring_menu ;;
-        11) scan_bots ;;
-        12) monitoring_status ;;
-        13) remove_component_menu ;;
-        14) restart_all ;;
+        11) generate_bot_info ;;
+        12) scan_bots ;;
+        13) monitoring_status ;;
+        14) remove_component_menu ;;
+        15) restart_all ;;
         0)
             echo ""
             log_info "Выход из системы управления..."
@@ -105,7 +107,7 @@ show_main_menu() {
             exit 0
             ;;
         *)
-            log_error "Неверный выбор. Пожалуйста, введите число от 0 до 14"
+            log_error "Неверный выбор. Пожалуйста, введите число от 0 до 15"
             sleep 2
             ;;
     esac
@@ -286,6 +288,19 @@ monitoring_menu() {
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             setup_monitoring
         fi
+    fi
+}
+
+# Генерация bot_info.json
+generate_bot_info() {
+    echo ""
+    log_info "Генерация bot_info.json для существующих ботов..."
+    echo ""
+
+    if [ -f "$SCRIPT_DIR/scripts/generate-bot-info.sh" ]; then
+        bash "$SCRIPT_DIR/scripts/generate-bot-info.sh"
+    else
+        log_error "Файл generate-bot-info.sh не найден"
     fi
 }
 
