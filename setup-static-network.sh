@@ -119,6 +119,33 @@ echo ""
 log_success "Статическая сеть настроена"
 echo ""
 
+# Configure UFW to allow Docker subnet traffic
+log_info "Настройка UFW для Docker подсети..."
+
+if command -v ufw &> /dev/null; then
+    # Check if UFW is enabled
+    if ufw status | grep -q "Status: active"; then
+        log_info "UFW активен, добавление правил для Docker подсети..."
+
+        # Allow traffic from Docker subnet to PostgreSQL
+        ufw allow from 172.25.0.0/16 to any port 5432 comment 'PostgreSQL Docker' 2>/dev/null || true
+
+        # Allow all traffic from Docker subnet (for inter-container communication)
+        ufw allow from 172.25.0.0/16 comment 'Docker bots_shared_network' 2>/dev/null || true
+
+        log_success "UFW правила добавлены для Docker подсети"
+
+        # Reload UFW to apply changes
+        ufw reload 2>/dev/null || true
+    else
+        log_warning "UFW не активен, правила будут применены при включении UFW"
+    fi
+else
+    log_warning "UFW не установлен, пропуск настройки файрвола"
+fi
+
+echo ""
+
 # Show network details
 log_info "Детали сети:"
 docker network inspect "$NETWORK_NAME" --format \

@@ -313,9 +313,13 @@ setup_firewall() {
         ufw allow 80/tcp comment 'HTTP'
         ufw allow 443/tcp comment 'HTTPS'
         
-        # PostgreSQL (only from localhost)
+        # PostgreSQL (only from localhost and Docker subnet)
         ufw allow from 127.0.0.1 to any port 5432 comment 'PostgreSQL Local'
-        
+        ufw allow from 172.25.0.0/16 to any port 5432 comment 'PostgreSQL Docker'
+
+        # Docker subnet (allow all traffic from containers)
+        ufw allow from 172.25.0.0/16 comment 'Docker bots_shared_network'
+
         # Grafana (with optional IP restriction)
         if [ -n "$UFW_GRAFANA_ALLOWED_IPS" ]; then
             ufw allow from "$UFW_GRAFANA_ALLOWED_IPS" to any port $GRAFANA_PORT comment 'Grafana'
