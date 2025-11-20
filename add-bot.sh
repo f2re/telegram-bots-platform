@@ -758,8 +758,22 @@ start_bot() {
 
     cd "$BOT_DIR"
 
+    # Load .env to ensure we have all variables
+    if [ -f ".env" ]; then
+        set -a
+        source .env
+        set +a
+    fi
+
     # Create shared network if not exists
-    docker network create ${DOCKER_NETWORK_NAME:-bots_shared_network} 2>/dev/null || true
+    local shared_network="${DOCKER_NETWORK_NAME:-bots_shared_network}"
+    log_info "Создание общей сети: $shared_network"
+    docker network create "$shared_network" 2>/dev/null || true
+
+    # Create bot-specific network (required by docker-compose.yml)
+    local bot_network="${BOT_NAME}_network"
+    log_info "Создание сети бота: $bot_network"
+    docker network create "$bot_network" 2>/dev/null || true
 
     # Build and start
     log_info "Сборка Docker образов..."
