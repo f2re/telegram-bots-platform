@@ -1,8 +1,9 @@
 #!/bin/bash
 
 # ========================================
-# 🤖 Add New Bot Script v2.0
+# 🤖 Add New Bot Script v2.1
 # С автоопределением структуры репозитория
+# И поддержкой DuckDNS SSL
 # ========================================
 
 set -euo pipefail
@@ -21,6 +22,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLATFORM_DIR="/opt/telegram-bots-platform"
 BOTS_DIR="$PLATFORM_DIR/bots"
 CONFIG_FILE="$SCRIPT_DIR/config.env"
+DUCKDNS_TOKEN_FILE="/root/.secrets/duckdns.ini"
 
 # Load configuration
 if [ -f "$CONFIG_FILE" ]; then
@@ -45,9 +47,10 @@ show_banner() {
     cat << "EOF"
 ╔═══════════════════════════════════════════════════════╗
 ║                                                       ║
-║         🤖 ADD NEW TELEGRAM BOT v2.0 🤖              ║
+║         🤖 ADD NEW TELEGRAM BOT v2.1 🤖              ║
 ║                                                       ║
 ║         С автоопределением структуры                 ║
+║         + DuckDNS SSL Support                        ║
 ║                                                       ║
 ╚═══════════════════════════════════════════════════════╝
 EOF
@@ -62,6 +65,63 @@ load_pg_credentials() {
         log_error "PostgreSQL credentials not found!"
         exit 1
     fi
+}
+
+# Detect SSL method based on domain
+detect_ssl_method() {
+    local domain=$1
+    
+    if [[ "$domain" == *.duckdns.org ]]; then
+        echo "duckdns"
+    else
+        echo "standard"
+    fi
+}
+
+# Check and setup DuckDNS token
+setup_duckdns_token() {
+    log_step "Настройка DuckDNS токена"
+    
+    if [ -f "$DUCKDNS_TOKEN_FILE" ]; then
+        log_success "DuckDNS токен уже настроен"
+        return 0
+    fi
+    
+    log_info "DuckDNS токен не найден"
+    echo -e "${YELLOW}Для получения SSL сертификата для DuckDNS домена нужен токен${NC}"
+    echo -e "${YELLOW}Получите его на: https://www.duckdns.org/${NC}\n"
+    
+    read -p "$(echo -e ${CYAN}Введите DuckDNS токен: ${NC})" DUCKDNS_TOKEN
+    
+    if [ -z "$DUCKDNS_TOKEN" ]; then
+        log_error "Токен не может быть пустым"
+        exit 1
+    fi
+    
+    # Create secrets directory
+    mkdir -p "$(dirname "$DUCKDNS_TOKEN_FILE")"
+    
+    # Save token
+    echo "dns_duckdns_token=$DUCKDNS_TOKEN" > "$DUCKDNS_TOKEN_FILE"
+    chmod 600 "$DUCKDNS_TOKEN_FILE"
+    
+    log_success "DuckDNS токен сохранен в $DUCKDNS_TOKEN_FILE"
+}
+
+# Install certbot-dns-duckdns if needed
+install_duckdns_plugin() {
+    if pip3 list | grep -q certbot-dns-duckdns; then
+        log_info "certbot-dns-duckdns уже установлен"
+        return 0
+    fi
+    
+    log_info "Установка certbot-dns-duckdns плагина..."
+    pip3 install certbot-dns-duckdns || {
+        log_error "Не удалось установить certbot-dns-duckdns"
+        exit 1
+    }
+    
+    log_success "certbot-dns-duckdns установлен"
 }
 
 # Detect bot structure
@@ -359,7 +419,16 @@ prompt_bot_info() {
     read -p "$(echo -e ${CYAN}Telegram Bot Token: ${NC})" BOT_TOKEN
 
     # Domain
-    read -p "$(echo -e ${CYAN}Доменное имя [example: bot.mydomain.com]: ${NC})" BOT_DOMAIN
+    read -p "$(echo -e ${CYAN}Доменное имя [example: bot.mydomain.com или yourbot.duckdns.org]: ${NC})" BOT_DOMAIN
+    
+    # Detect SSL method
+    SSL_METHOD=$(detect_ssl_method "$BOT_DOMAIN")
+    
+    if [ "$SSL_METHOD" = "duckdns" ]; then
+        log_info "Обнаружен DuckDNS домен - будет использован DNS-01 challenge"
+    else
+        log_info "Будет использован стандартный HTTP-01 challenge"
+    fi
 
     # GitHub repository
     read -p "$(echo -e ${CYAN}GitHub repository URL: ${NC})" GIT_REPO
@@ -376,6 +445,7 @@ prompt_bot_info() {
     echo -e "${YELLOW}═══════════════════════════════════════${NC}"
     echo -e "  Название: ${GREEN}$BOT_NAME${NC}"
     echo -e "  Домен: ${GREEN}$BOT_DOMAIN${NC}"
+    echo -e "  SSL Method: ${GREEN}$SSL_METHOD${NC}"
     echo -e "  Backend Port: ${GREEN}$BACKEND_PORT${NC}"
     echo -e "  Repository: ${GREEN}$GIT_REPO${NC}"
     echo -e "${YELLOW}═══════════════════════════════════════${NC}\n"
@@ -542,10 +612,40 @@ server {
     listen [::]:80;
     server_name $BOT_DOMAIN;
 
-    # ACME challenge for Let's Encrypt
-    location /.well-known/acme-challenge/ {
-        root /var/www/html;
+    location / {
+        return 301 https://\$server_name\$request_uri;
     }
+}
+
+# HTTPS server
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name $BOT_DOMAIN;
+
+    # SSL certificates
+    ssl_certificate /etc/letsencrypt/live/$BOT_DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$BOT_DOMAIN/privkey.pem;
+
+    # SSL configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+
+    # Security headers
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    # Logging
+    access_log /var/log/nginx/${BOT_NAME}_access.log;
+    error_log /var/log/nginx/${BOT_NAME}_error.log;
+
+    # Rate limiting
+    limit_req zone=api burst=20 nodelay;
 
 EOF
 
@@ -614,11 +714,20 @@ EOF
     log_success "Nginx настроен (HTTP only, SSL will be added next)"
 }
 
-# Obtain SSL certificate
+# Obtain SSL certificate with DuckDNS support
 obtain_ssl_certificate() {
     log_step "Получение SSL сертификата"
 
-    log_info "Requesting certificate for $BOT_DOMAIN..."
+    if [ "$SSL_METHOD" = "duckdns" ]; then
+        obtain_ssl_certificate_duckdns
+    else
+        obtain_ssl_certificate_standard
+    fi
+}
+
+# Standard SSL certificate (HTTP-01)
+obtain_ssl_certificate_standard() {
+    log_info "Requesting certificate for $BOT_DOMAIN via HTTP-01 challenge..."
 
     # Obtain certificate
     certbot certonly \
@@ -629,117 +738,65 @@ obtain_ssl_certificate() {
         --email "admin@$BOT_DOMAIN" \
         --domains "$BOT_DOMAIN" \
         || {
-            log_warning "Failed to obtain SSL certificate. Creating self-signed certificate..."
-
-            # Create self-signed certificate
-            mkdir -p "/etc/letsencrypt/live/$BOT_DOMAIN"
-            openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-                -keyout "/etc/letsencrypt/live/$BOT_DOMAIN/privkey.pem" \
-                -out "/etc/letsencrypt/live/$BOT_DOMAIN/fullchain.pem" \
-                -subj "/CN=$BOT_DOMAIN" 2>/dev/null
+            log_warning "Failed to obtain SSL certificate. Using self-signed certificate."
+            create_self_signed_certificate
+            return 1
         }
 
-    # Now update Nginx configuration to add HTTPS
-    local NGINX_CONF="/etc/nginx/sites-available/${BOT_NAME}.conf"
+    # Reload Nginx with SSL
+    systemctl reload nginx
 
-    log_info "Adding HTTPS configuration to Nginx..."
-
-    # Update HTTP server to redirect to HTTPS
-    sed -i '/server_name '"$BOT_DOMAIN"';/a\
-\
-    # Redirect all HTTP to HTTPS except ACME challenge\
-    location / {\
-        return 301 https://$server_name$request_uri;\
-    }' "$NGINX_CONF"
-
-    # Remove old proxy_pass locations from HTTP server (they'll be in HTTPS)
-    sed -i '/# Frontend/,/^    }/d; /# Backend only/,/^    }/d; /# Backend API/,/^    }/d' "$NGINX_CONF"
-
-    # Add HTTPS server block
-    cat >> "$NGINX_CONF" << EOF
-
-# HTTPS server
-server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    server_name $BOT_DOMAIN;
-
-    # SSL certificates
-    ssl_certificate /etc/letsencrypt/live/$BOT_DOMAIN/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/$BOT_DOMAIN/privkey.pem;
-
-    # SSL configuration
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers on;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
-
-    # Security headers
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header Strict-Transport-Security "max-age=31536000" always;
-
-    # Logging
-    access_log /var/log/nginx/${BOT_NAME}_access.log;
-    error_log /var/log/nginx/${BOT_NAME}_error.log;
-
-EOF
-
-    if [ -n "${FRONTEND_PORT:-}" ]; then
-        cat >> "$NGINX_CONF" << EOF
-    # Frontend
-    location / {
-        proxy_pass http://${BOT_NAME}_frontend;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-
-    # Backend API
-    location /api {
-        proxy_pass http://${BOT_NAME}_backend;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-
-        # WebSocket support
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-EOF
-    else
-        cat >> "$NGINX_CONF" << EOF
-    # Backend only
-    location / {
-        proxy_pass http://${BOT_NAME}_backend;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-
-        # WebSocket support
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-EOF
-    fi
-
-    cat >> "$NGINX_CONF" << EOF
+    log_success "SSL сертификат получен для $BOT_DOMAIN"
 }
-EOF
 
-    # Test and reload Nginx
-    if nginx -t 2>&1; then
-        systemctl reload nginx
-        log_success "SSL настроен и Nginx перезагружен"
-    else
-        log_error "Nginx configuration test failed after adding SSL!"
-        return 1
-    fi
+# DuckDNS SSL certificate (DNS-01)
+obtain_ssl_certificate_duckdns() {
+    log_info "Requesting certificate for $BOT_DOMAIN via DNS-01 challenge (DuckDNS)..."
+    
+    # Setup DuckDNS token
+    setup_duckdns_token
+    
+    # Install DuckDNS plugin
+    install_duckdns_plugin
+    
+    # Obtain certificate using DNS challenge
+    certbot certonly \
+        --dns-duckdns \
+        --dns-duckdns-credentials "$DUCKDNS_TOKEN_FILE" \
+        --dns-duckdns-propagation-seconds 120 \
+        --non-interactive \
+        --agree-tos \
+        --email "admin@$BOT_DOMAIN" \
+        --domains "$BOT_DOMAIN" \
+        --preferred-challenges dns \
+        || {
+            log_error "Failed to obtain SSL certificate for DuckDNS domain"
+            log_warning "Please check your DuckDNS token and domain configuration"
+            log_info "Trying to create self-signed certificate as fallback..."
+            create_self_signed_certificate
+            return 1
+        }
+
+    log_success "SSL сертификат получен для $BOT_DOMAIN через DNS-01 challenge"
+    
+    # Reload Nginx with SSL
+    systemctl reload nginx
+}
+
+# Create self-signed certificate as fallback
+create_self_signed_certificate() {
+    log_warning "Creating self-signed certificate for $BOT_DOMAIN..."
+    
+    # Create directory
+    mkdir -p "/etc/letsencrypt/live/$BOT_DOMAIN"
+    
+    # Generate self-signed certificate
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout "/etc/letsencrypt/live/$BOT_DOMAIN/privkey.pem" \
+        -out "/etc/letsencrypt/live/$BOT_DOMAIN/fullchain.pem" \
+        -subj "/CN=$BOT_DOMAIN"
+    
+    log_warning "Self-signed certificate created. Consider obtaining a valid certificate later."
 }
 
 # Start bot
@@ -794,6 +851,7 @@ save_bot_info() {
 {
     "name": "$BOT_NAME",
     "domain": "$BOT_DOMAIN",
+    "ssl_method": "$SSL_METHOD",
     "structure": "$STRUCTURE",
     "backend_port": $BACKEND_PORT,
     $([ "$HAS_FRONTEND" = "true" ] && echo "\"frontend_port\": $FRONTEND_PORT,")
@@ -816,6 +874,7 @@ show_completion() {
     echo -e "  ${YELLOW}➤${NC} Название: ${GREEN}$BOT_NAME${NC}"
     echo -e "  ${YELLOW}➤${NC} Структура: ${GREEN}$STRUCTURE${NC}"
     echo -e "  ${YELLOW}➤${NC} Домен: ${GREEN}https://$BOT_DOMAIN${NC}"
+    echo -e "  ${YELLOW}➤${NC} SSL Method: ${GREEN}$SSL_METHOD${NC}"
     echo -e "  ${YELLOW}➤${NC} Backend: ${GREEN}$BACKEND_PORT${NC}"
     [ "$HAS_FRONTEND" = "true" ] && echo -e "  ${YELLOW}➤${NC} Frontend: ${GREEN}$FRONTEND_PORT${NC}"
     echo -e "  ${YELLOW}➤${NC} База данных: ${GREEN}$DB_NAME${NC}"
@@ -826,6 +885,12 @@ show_completion() {
     echo -e "  Перезапуск:    ${GREEN}cd $BOTS_DIR/$BOT_NAME && docker compose restart${NC}"
     echo -e "  Остановка:     ${GREEN}cd $BOTS_DIR/$BOT_NAME && docker compose stop${NC}"
     echo -e "  Обновление:    ${GREEN}cd $BOTS_DIR/$BOT_NAME/app && git pull && cd .. && docker compose up --build -d${NC}\n"
+    
+    if [ "$SSL_METHOD" = "duckdns" ]; then
+        echo -e "${CYAN}🔐 SSL Certificate Info:${NC}\n"
+        echo -e "  Проверка:      ${GREEN}certbot certificates${NC}"
+        echo -e "  Обновление:    ${GREEN}certbot renew --dns-duckdns --dns-duckdns-credentials $DUCKDNS_TOKEN_FILE${NC}\n"
+    fi
 }
 
 # Main
