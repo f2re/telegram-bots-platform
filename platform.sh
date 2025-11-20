@@ -2,12 +2,12 @@
 
 # ========================================
 # Telegram Bots Platform Manager
-# Unified entry point for all platform operations
+# Единая точка входа для управления платформой
 # ========================================
 
 set -euo pipefail
 
-# Colors
+# Цвета
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -16,54 +16,66 @@ CYAN='\033[0;36m'
 MAGENTA='\033[0;35m'
 WHITE='\033[1;37m'
 GRAY='\033[0;90m'
+BOLD='\033[1m'
 NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
-log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
-log_warning() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+# Логирование
+log_info() { echo -e "${BLUE}[i]${NC} $1"; }
+log_success() { echo -e "${GREEN}[✓]${NC} $1"; }
+log_warning() { echo -e "${YELLOW}[!]${NC} $1"; }
+log_error() { echo -e "${RED}[✗]${NC} $1"; }
 
-# Aligned banner (no emoji spacing issues)
+# Красивый баннер
 show_banner() {
     clear
-    echo -e "${CYAN}"
+    echo -e "${CYAN}${BOLD}"
     cat << 'EOF'
-╔════════════════════════════════════════════════════════════╗
-║                                                            ║
-║      TELEGRAM BOTS PLATFORM - Management Console          ║
-║                                                            ║
-╚════════════════════════════════════════════════════════════╝
+    ╔══════════════════════════════════════════════════════════╗
+    ║                                                          ║
+    ║       ПЛАТФОРМА TELEGRAM БОТОВ - Панель Управления      ║
+    ║                                                          ║
+    ║          Unified Management Console v2.0                 ║
+    ║                                                          ║
+    ╚══════════════════════════════════════════════════════════╝
 EOF
     echo -e "${NC}\n"
 }
 
-# Main menu
+# Главное меню
 show_main_menu() {
-    echo -e "${CYAN}═══ Main Menu ═══${NC}\n"
-    echo "  ${YELLOW}SETUP & CONFIGURATION${NC}"
-    echo "  1) Initial Server Setup (Full)"
-    echo "  2) Component Setup (Select Components)"
-    echo "  3) Network Setup (Static Docker Network)"
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║${NC}                    ${BOLD}${WHITE}ГЛАВНОЕ МЕНЮ${NC}                          ${CYAN}║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}\n"
+
+    echo -e "  ${YELLOW}▸ УСТАНОВКА И НАСТРОЙКА${NC}"
+    echo -e "    ${WHITE}1${NC})  Полная установка сервера"
+    echo -e "    ${WHITE}2${NC})  Установка отдельных компонентов"
+    echo -e "    ${WHITE}3${NC})  Настройка статической сети Docker"
     echo ""
-    echo "  ${YELLOW}BOT MANAGEMENT${NC}"
-    echo "  4) Add New Bot"
-    echo "  5) Manage Bots"
-    echo "  6) Remove Bot"
+
+    echo -e "  ${GREEN}▸ УПРАВЛЕНИЕ БОТАМИ${NC}"
+    echo -e "    ${WHITE}4${NC})  Добавить нового бота"
+    echo -e "    ${WHITE}5${NC})  Управление ботами"
+    echo -e "    ${WHITE}6${NC})  Удалить бота"
     echo ""
-    echo "  ${YELLOW}SYSTEM MANAGEMENT${NC}"
-    echo "  7) Show All Credentials"
-    echo "  8) Fix Permissions"
-    echo "  9) View System Status"
+
+    echo -e "  ${BLUE}▸ СИСТЕМА${NC}"
+    echo -e "    ${WHITE}7${NC})  Показать все учетные данные"
+    echo -e "    ${WHITE}8${NC})  Исправить права доступа"
+    echo -e "    ${WHITE}9${NC})  Статус системы"
     echo ""
-    echo "  ${YELLOW}ADVANCED${NC}"
-    echo "  10) Remove Component"
-    echo "  11) Restart All Services"
+
+    echo -e "  ${MAGENTA}▸ ДОПОЛНИТЕЛЬНО${NC}"
+    echo -e "    ${WHITE}10${NC}) Удалить компонент"
+    echo -e "    ${WHITE}11${NC}) Перезапустить все сервисы"
     echo ""
-    echo "  0) Exit"
+
+    echo -e "  ${RED}0${NC})  Выход"
     echo ""
-    read -p "$(echo -e ${WHITE}Your choice: ${NC})" choice
+    echo -e "${GRAY}──────────────────────────────────────────────────────────${NC}"
+    read -p "$(echo -e "  ${BOLD}${WHITE}Ваш выбор${NC} [${CYAN}0-11${NC}]: ")" choice
 
     case $choice in
         1) full_server_setup ;;
@@ -77,36 +89,54 @@ show_main_menu() {
         9) system_status ;;
         10) remove_component_menu ;;
         11) restart_all ;;
-        0) exit 0 ;;
-        *) log_error "Invalid choice" ;;
+        0)
+            echo ""
+            log_info "Выход из системы управления..."
+            echo ""
+            exit 0
+            ;;
+        *)
+            log_error "Неверный выбор. Пожалуйста, введите число от 0 до 11"
+            sleep 2
+            ;;
     esac
 
     echo ""
-    read -p "Press Enter to continue..."
+    echo -e "${GRAY}Нажмите ${WHITE}Enter${GRAY} для продолжения...${NC}"
+    read
 }
 
-# Full server setup
+# Полная установка сервера
 full_server_setup() {
-    log_info "Starting full server setup..."
+    echo ""
+    log_info "Запуск полной установки сервера..."
+    echo ""
+
     if [ -f "$SCRIPT_DIR/setup-server.sh" ]; then
         "$SCRIPT_DIR/setup-server.sh"
     else
-        log_error "setup-server.sh not found"
+        log_error "Файл setup-server.sh не найден"
     fi
 }
 
-# Component setup menu
+# Меню установки компонентов
 component_setup() {
-    echo -e "\n${CYAN}═══ Component Setup ═══${NC}\n"
-    echo "  1) PostgreSQL Database"
-    echo "  2) Docker"
-    echo "  3) Nginx Web Server"
-    echo "  4) Static Docker Network"
-    echo "  5) Monitoring (Prometheus + Grafana)"
-    echo "  6) SSL Certificates"
-    echo "  0) Back"
+    clear
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║${NC}              ${BOLD}${WHITE}УСТАНОВКА КОМПОНЕНТОВ${NC}                     ${CYAN}║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}\n"
+
+    echo -e "  ${WHITE}1${NC})  PostgreSQL - База данных"
+    echo -e "  ${WHITE}2${NC})  Docker - Контейнеризация"
+    echo -e "  ${WHITE}3${NC})  Nginx - Веб-сервер"
+    echo -e "  ${WHITE}4${NC})  Статическая сеть Docker (172.25.0.1)"
+    echo -e "  ${WHITE}5${NC})  Мониторинг (Prometheus + Grafana)"
+    echo -e "  ${WHITE}6${NC})  SSL сертификаты (Let's Encrypt)"
     echo ""
-    read -p "$(echo -e ${WHITE}Select component: ${NC})" comp
+    echo -e "  ${RED}0${NC})  Назад в главное меню"
+    echo ""
+    echo -e "${GRAY}──────────────────────────────────────────────────────────${NC}"
+    read -p "$(echo -e "  ${BOLD}${WHITE}Выберите компонент${NC} [${CYAN}0-6${NC}]: ")" comp
 
     case $comp in
         1) setup_postgresql ;;
@@ -116,68 +146,78 @@ component_setup() {
         5) setup_monitoring ;;
         6) setup_ssl ;;
         0) return ;;
-        *) log_error "Invalid choice" ;;
+        *)
+            log_error "Неверный выбор"
+            sleep 2
+            component_setup
+            ;;
     esac
 }
 
-# PostgreSQL setup with static network
+# Установка PostgreSQL
 setup_postgresql() {
-    log_info "Setting up PostgreSQL with static network configuration..."
+    echo ""
+    log_info "Установка PostgreSQL с настройкой статической сети..."
+    echo ""
 
-    # Install PostgreSQL
-    apt-get update
+    # Установка PostgreSQL
+    apt-get update -qq
     apt-get install -y postgresql postgresql-contrib
 
-    # Configure for static network
+    # Настройка для статической сети
     PG_VERSION=$(sudo -u postgres psql --version | grep -oP '\d+' | head -1)
     PG_CONF="/etc/postgresql/$PG_VERSION/main/postgresql.conf"
     PG_HBA="/etc/postgresql/$PG_VERSION/main/pg_hba.conf"
 
-    # Backup
+    # Резервное копирование
     mkdir -p /root/.platform/backups
     cp "$PG_CONF" "/root/.platform/backups/postgresql.conf.$(date +%Y%m%d_%H%M%S)"
     cp "$PG_HBA" "/root/.platform/backups/pg_hba.conf.$(date +%Y%m%d_%H%M%S)"
 
-    # Configure listen_addresses
+    # Настройка listen_addresses
     sed -i "s/^listen_addresses/#listen_addresses/" "$PG_CONF"
     echo "listen_addresses = 'localhost,172.25.0.1'" >> "$PG_CONF"
 
-    # Configure pg_hba.conf
+    # Настройка pg_hba.conf
     if ! grep -q "172.25.0.0/16" "$PG_HBA"; then
         echo "host    all    all    172.25.0.0/16    scram-sha-256" >> "$PG_HBA"
     fi
 
-    # Restart PostgreSQL
+    # Перезапуск PostgreSQL
     systemctl restart postgresql
     systemctl enable postgresql
 
-    log_success "PostgreSQL configured for static network (172.25.0.1)"
+    log_success "PostgreSQL настроен для статической сети (172.25.0.1)"
 }
 
-# Docker setup
+# Установка Docker
 setup_docker() {
-    log_info "Installing Docker..."
+    echo ""
+    log_info "Установка Docker..."
+    echo ""
 
-    # Install Docker
+    # Установка Docker
     curl -fsSL https://get.docker.com -o get-docker.sh
     sh get-docker.sh
     rm get-docker.sh
 
-    # Start and enable Docker
+    # Запуск и автозагрузка
     systemctl start docker
     systemctl enable docker
 
-    log_success "Docker installed and started"
+    log_success "Docker установлен и запущен"
 }
 
-# Nginx setup
+# Установка Nginx
 setup_nginx() {
-    log_info "Installing Nginx..."
+    echo ""
+    log_info "Установка Nginx..."
+    echo ""
 
-    apt-get update
+    apt-get update -qq
     apt-get install -y nginx certbot python3-certbot-nginx
 
-    # Create SSL params
+    # Создание параметров SSL
     cat > /etc/nginx/snippets/ssl-params.conf << 'EOF'
 ssl_protocols TLSv1.2 TLSv1.3;
 ssl_prefer_server_ciphers on;
@@ -189,150 +229,208 @@ EOF
     systemctl start nginx
     systemctl enable nginx
 
-    log_success "Nginx installed and configured"
+    log_success "Nginx установлен и настроен"
 }
 
-# Static network setup
+# Настройка статической сети
 setup_static_network() {
     if [ -f "$SCRIPT_DIR/setup-static-network.sh" ]; then
         "$SCRIPT_DIR/setup-static-network.sh"
     else
-        log_error "setup-static-network.sh not found"
+        log_error "Файл setup-static-network.sh не найден"
     fi
 }
 
-# Monitoring setup
+# Установка мониторинга
 setup_monitoring() {
-    log_info "Setting up monitoring stack..."
+    echo ""
+    log_info "Установка стека мониторинга..."
+    echo ""
 
     if [ -f "$SCRIPT_DIR/scripts/monitoring.sh" ]; then
         "$SCRIPT_DIR/scripts/monitoring.sh"
     else
-        log_warning "Monitoring script not found"
+        log_warning "Скрипт мониторинга не найден"
     fi
 }
 
-# SSL setup
+# Настройка SSL
 setup_ssl() {
-    log_info "SSL setup - use during bot creation"
-    log_info "SSL certificates are automatically obtained when adding a bot"
+    echo ""
+    log_info "Настройка SSL - используйте при создании бота"
+    log_info "SSL сертификаты автоматически получаются при добавлении бота"
+    echo ""
 }
 
-# Network setup
+# Настройка сети
 network_setup() {
     if [ -f "$SCRIPT_DIR/setup-static-network.sh" ]; then
         "$SCRIPT_DIR/setup-static-network.sh"
     else
-        log_error "setup-static-network.sh not found"
+        log_error "Файл setup-static-network.sh не найден"
     fi
 }
 
-# Add bot
+# Добавить бота
 add_bot() {
     if [ -f "$SCRIPT_DIR/add-bot.sh" ]; then
         "$SCRIPT_DIR/add-bot.sh"
     else
-        log_error "add-bot.sh not found"
+        log_error "Файл add-bot.sh не найден"
     fi
 }
 
-# Manage bots
+# Управление ботами
 manage_bots() {
     if [ -f "$SCRIPT_DIR/bot-manage.sh" ]; then
         "$SCRIPT_DIR/bot-manage.sh"
     else
-        log_error "bot-manage.sh not found"
+        log_error "Файл bot-manage.sh не найден"
     fi
 }
 
-# Remove bot
+# Удалить бота
 remove_bot() {
     if [ -f "$SCRIPT_DIR/remove-bot.sh" ]; then
         "$SCRIPT_DIR/remove-bot.sh"
     else
-        log_error "remove-bot.sh not found"
+        log_error "Файл remove-bot.sh не найден"
     fi
 }
 
-# Show credentials
+# Показать учетные данные
 show_credentials() {
     if [ -f "$SCRIPT_DIR/show-credentials.sh" ]; then
         "$SCRIPT_DIR/show-credentials.sh"
     else
-        log_error "show-credentials.sh not found"
+        log_error "Файл show-credentials.sh не найден"
     fi
 }
 
-# Fix permissions
+# Исправить права доступа
 fix_permissions() {
     if [ -f "$SCRIPT_DIR/scripts/fix-permissions.sh" ]; then
         bash "$SCRIPT_DIR/scripts/fix-permissions.sh"
     else
-        log_warning "fix-permissions.sh not found"
+        log_warning "Файл fix-permissions.sh не найден"
     fi
 }
 
-# System status
+# Статус системы
 system_status() {
-    echo -e "\n${CYAN}═══ System Status ═══${NC}\n"
+    clear
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║${NC}                  ${BOLD}${WHITE}СТАТУС СИСТЕМЫ${NC}                         ${CYAN}║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}\n"
 
     # PostgreSQL
-    echo -e "${YELLOW}PostgreSQL:${NC}"
+    echo -e "  ${YELLOW}┌─ PostgreSQL${NC}"
     if systemctl is-active --quiet postgresql; then
-        echo -e "  ${GREEN}●${NC} Running"
+        echo -e "  ${YELLOW}│${NC}  Статус: ${GREEN}● Запущен${NC}"
+        local pg_version=$(sudo -u postgres psql --version 2>/dev/null | grep -oP '\d+\.\d+' | head -1)
+        [ -n "$pg_version" ] && echo -e "  ${YELLOW}│${NC}  Версия: ${GRAY}$pg_version${NC}"
+        echo -e "  ${YELLOW}│${NC}  Gateway: ${CYAN}172.25.0.1:5432${NC}"
     else
-        echo -e "  ${RED}●${NC} Stopped"
+        echo -e "  ${YELLOW}│${NC}  Статус: ${RED}● Остановлен${NC}"
     fi
+    echo -e "  ${YELLOW}└─${NC}"
 
     # Docker
-    echo -e "\n${YELLOW}Docker:${NC}"
+    echo ""
+    echo -e "  ${YELLOW}┌─ Docker${NC}"
     if systemctl is-active --quiet docker; then
-        echo -e "  ${GREEN}●${NC} Running"
-        docker ps --format "table {{.Names}}\t{{.Status}}" | head -5
+        echo -e "  ${YELLOW}│${NC}  Статус: ${GREEN}● Запущен${NC}"
+        local container_count=$(docker ps -q 2>/dev/null | wc -l)
+        echo -e "  ${YELLOW}│${NC}  Контейнеров: ${CYAN}$container_count${NC}"
+
+        if [ $container_count -gt 0 ]; then
+            echo -e "  ${YELLOW}│${NC}"
+            docker ps --format "  ${YELLOW}│${NC}    ${GREEN}▪${NC} {{.Names}} ${GRAY}({{.Status}})${NC}" 2>/dev/null | head -5
+        fi
     else
-        echo -e "  ${RED}●${NC} Stopped"
+        echo -e "  ${YELLOW}│${NC}  Статус: ${RED}● Остановлен${NC}"
     fi
+    echo -e "  ${YELLOW}└─${NC}"
 
     # Nginx
-    echo -e "\n${YELLOW}Nginx:${NC}"
+    echo ""
+    echo -e "  ${YELLOW}┌─ Nginx${NC}"
     if systemctl is-active --quiet nginx; then
-        echo -e "  ${GREEN}●${NC} Running"
+        echo -e "  ${YELLOW}│${NC}  Статус: ${GREEN}● Запущен${NC}"
+        local nginx_version=$(nginx -v 2>&1 | grep -oP '\d+\.\d+\.\d+')
+        [ -n "$nginx_version" ] && echo -e "  ${YELLOW}│${NC}  Версия: ${GRAY}$nginx_version${NC}"
     else
-        echo -e "  ${RED}●${NC} Stopped"
+        echo -e "  ${YELLOW}│${NC}  Статус: ${RED}● Остановлен${NC}"
     fi
+    echo -e "  ${YELLOW}└─${NC}"
 
-    # Networks
-    echo -e "\n${YELLOW}Docker Networks:${NC}"
-    docker network ls --format "table {{.Name}}\t{{.Driver}}" | grep -E "bots_|NAME"
+    # Docker Networks
+    echo ""
+    echo -e "  ${YELLOW}┌─ Docker Networks${NC}"
+    if command -v docker &> /dev/null; then
+        if docker network ls --format '{{.Name}}' 2>/dev/null | grep -q "bots_shared_network"; then
+            echo -e "  ${YELLOW}│${NC}  ${GREEN}▪${NC} bots_shared_network ${CYAN}(172.25.0.0/16)${NC}"
+            local gateway=$(docker network inspect bots_shared_network --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}' 2>/dev/null)
+            [ -n "$gateway" ] && echo -e "  ${YELLOW}│${NC}    Gateway: ${CYAN}$gateway${NC}"
+        else
+            echo -e "  ${YELLOW}│${NC}  ${RED}✗${NC} Статическая сеть не найдена"
+        fi
+    fi
+    echo -e "  ${YELLOW}└─${NC}"
 
-    # Bots
-    echo -e "\n${YELLOW}Bots:${NC}"
+    # Боты
+    echo ""
+    echo -e "  ${YELLOW}┌─ Telegram Боты${NC}"
     if [ -d "/opt/telegram-bots-platform/bots" ]; then
+        local bot_count=0
+        local running_count=0
+
         for bot in /opt/telegram-bots-platform/bots/*; do
             if [ -d "$bot" ]; then
+                bot_count=$((bot_count + 1))
                 bot_name=$(basename "$bot")
                 cd "$bot"
                 if docker compose ps --format json 2>/dev/null | grep -q "running"; then
-                    echo -e "  ${GREEN}●${NC} $bot_name"
+                    echo -e "  ${YELLOW}│${NC}  ${GREEN}● $bot_name${NC}"
+                    running_count=$((running_count + 1))
                 else
-                    echo -e "  ${RED}●${NC} $bot_name"
+                    echo -e "  ${YELLOW}│${NC}  ${RED}● $bot_name${NC}"
                 fi
             fi
         done
+
+        if [ $bot_count -eq 0 ]; then
+            echo -e "  ${YELLOW}│${NC}  ${GRAY}Ботов не найдено${NC}"
+        else
+            echo -e "  ${YELLOW}│${NC}"
+            echo -e "  ${YELLOW}│${NC}  Всего: ${CYAN}$bot_count${NC} | Запущено: ${GREEN}$running_count${NC}"
+        fi
+    else
+        echo -e "  ${YELLOW}│${NC}  ${GRAY}Директория ботов не найдена${NC}"
     fi
+    echo -e "  ${YELLOW}└─${NC}"
+
+    echo ""
 }
 
-# Remove component menu
+# Меню удаления компонентов
 remove_component_menu() {
-    echo -e "\n${RED}═══ Remove Component ═══${NC}\n"
-    echo -e "${YELLOW}WARNING: This will remove components from the system!${NC}\n"
-    echo "  1) Remove PostgreSQL"
-    echo "  2) Remove Docker"
-    echo "  3) Remove Nginx"
-    echo "  4) Remove Monitoring"
-    echo "  0) Back"
+    clear
+    echo -e "${RED}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║${NC}              ${BOLD}${WHITE}УДАЛЕНИЕ КОМПОНЕНТОВ${NC}                     ${RED}║${NC}"
+    echo -e "${RED}╚═══════════════════════════════════════════════════════════╝${NC}\n"
+
+    echo -e "${YELLOW}  ⚠  ВНИМАНИЕ: Это удалит компоненты из системы!${NC}\n"
+
+    echo -e "  ${WHITE}1${NC})  Удалить PostgreSQL (+ все базы данных)"
+    echo -e "  ${WHITE}2${NC})  Удалить Docker (+ все контейнеры)"
+    echo -e "  ${WHITE}3${NC})  Удалить Nginx (+ все конфигурации)"
+    echo -e "  ${WHITE}4${NC})  Удалить мониторинг"
     echo ""
-    read -p "$(echo -e ${WHITE}Select component to remove: ${NC})" comp
+    echo -e "  ${GREEN}0${NC})  Назад в главное меню"
+    echo ""
+    echo -e "${GRAY}──────────────────────────────────────────────────────────${NC}"
+    read -p "$(echo -e "  ${BOLD}${WHITE}Выберите компонент${NC} [${CYAN}0-4${NC}]: ")" comp
 
     case $comp in
         1) remove_postgresql ;;
@@ -340,75 +438,95 @@ remove_component_menu() {
         3) remove_nginx ;;
         4) remove_monitoring ;;
         0) return ;;
-        *) log_error "Invalid choice" ;;
+        *)
+            log_error "Неверный выбор"
+            sleep 2
+            remove_component_menu
+            ;;
     esac
 }
 
-# Remove PostgreSQL
+# Удалить PostgreSQL
 remove_postgresql() {
-    echo -e "\n${RED}WARNING: This will remove PostgreSQL and ALL databases!${NC}"
-    read -p "Type 'DELETE' to confirm: " confirm
+    echo ""
+    echo -e "${RED}╔══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║  ВНИМАНИЕ! Это удалит PostgreSQL и ВСЕ базы данных!    ║${NC}"
+    echo -e "${RED}╚══════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    read -p "$(echo -e "Введите ${RED}DELETE${NC} для подтверждения: ")" confirm
 
     if [ "$confirm" = "DELETE" ]; then
-        log_info "Stopping PostgreSQL..."
+        log_info "Остановка PostgreSQL..."
         systemctl stop postgresql
 
-        log_info "Removing PostgreSQL..."
-        apt-get remove --purge -y postgresql postgresql-*
+        log_info "Удаление PostgreSQL..."
+        apt-get remove --purge -y postgresql postgresql-* 2>/dev/null
         rm -rf /var/lib/postgresql
         rm -rf /etc/postgresql
 
-        log_success "PostgreSQL removed"
+        log_success "PostgreSQL удален"
     else
-        log_warning "Cancelled"
+        log_warning "Отменено"
     fi
 }
 
-# Remove Docker
+# Удалить Docker
 remove_docker() {
-    echo -e "\n${RED}WARNING: This will remove Docker and ALL containers!${NC}"
-    read -p "Type 'DELETE' to confirm: " confirm
+    echo ""
+    echo -e "${RED}╔══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║  ВНИМАНИЕ! Это удалит Docker и ВСЕ контейнеры!         ║${NC}"
+    echo -e "${RED}╚══════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    read -p "$(echo -e "Введите ${RED}DELETE${NC} для подтверждения: ")" confirm
 
     if [ "$confirm" = "DELETE" ]; then
-        log_info "Stopping all containers..."
+        log_info "Остановка всех контейнеров..."
         docker stop $(docker ps -aq) 2>/dev/null || true
 
-        log_info "Removing Docker..."
-        apt-get remove --purge -y docker-ce docker-ce-cli containerd.io
+        log_info "Удаление Docker..."
+        apt-get remove --purge -y docker-ce docker-ce-cli containerd.io 2>/dev/null
         rm -rf /var/lib/docker
 
-        log_success "Docker removed"
+        log_success "Docker удален"
     else
-        log_warning "Cancelled"
+        log_warning "Отменено"
     fi
 }
 
-# Remove Nginx
+# Удалить Nginx
 remove_nginx() {
-    echo -e "\n${RED}WARNING: This will remove Nginx and all configurations!${NC}"
-    read -p "Type 'DELETE' to confirm: " confirm
+    echo ""
+    echo -e "${RED}╔══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║  ВНИМАНИЕ! Это удалит Nginx и все конфигурации!        ║${NC}"
+    echo -e "${RED}╚══════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    read -p "$(echo -e "Введите ${RED}DELETE${NC} для подтверждения: ")" confirm
 
     if [ "$confirm" = "DELETE" ]; then
-        log_info "Stopping Nginx..."
+        log_info "Остановка Nginx..."
         systemctl stop nginx
 
-        log_info "Removing Nginx..."
-        apt-get remove --purge -y nginx nginx-common
+        log_info "Удаление Nginx..."
+        apt-get remove --purge -y nginx nginx-common 2>/dev/null
         rm -rf /etc/nginx
 
-        log_success "Nginx removed"
+        log_success "Nginx удален"
     else
-        log_warning "Cancelled"
+        log_warning "Отменено"
     fi
 }
 
-# Remove monitoring
+# Удалить мониторинг
 remove_monitoring() {
-    echo -e "\n${RED}WARNING: This will remove monitoring stack!${NC}"
-    read -p "Type 'DELETE' to confirm: " confirm
+    echo ""
+    echo -e "${RED}╔══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║  ВНИМАНИЕ! Это удалит весь стек мониторинга!           ║${NC}"
+    echo -e "${RED}╚══════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    read -p "$(echo -e "Введите ${RED}DELETE${NC} для подтверждения: ")" confirm
 
     if [ "$confirm" = "DELETE" ]; then
-        log_info "Removing monitoring..."
+        log_info "Удаление мониторинга..."
 
         if [ -d "/opt/monitoring" ]; then
             cd /opt/monitoring
@@ -417,42 +535,61 @@ remove_monitoring() {
             rm -rf /opt/monitoring
         fi
 
-        log_success "Monitoring removed"
+        log_success "Мониторинг удален"
     else
-        log_warning "Cancelled"
+        log_warning "Отменено"
     fi
 }
 
-# Restart all services
+# Перезапустить все сервисы
 restart_all() {
-    log_info "Restarting all services..."
+    echo ""
+    log_info "Перезапуск всех сервисов..."
+    echo ""
 
-    systemctl restart postgresql 2>/dev/null || true
-    systemctl restart docker 2>/dev/null || true
-    systemctl restart nginx 2>/dev/null || true
+    # Системные сервисы
+    echo -e "  ${BLUE}▸${NC} PostgreSQL..."
+    systemctl restart postgresql 2>/dev/null && log_success "PostgreSQL перезапущен" || log_warning "PostgreSQL не найден"
 
+    echo -e "  ${BLUE}▸${NC} Docker..."
+    systemctl restart docker 2>/dev/null && log_success "Docker перезапущен" || log_warning "Docker не найден"
+
+    echo -e "  ${BLUE}▸${NC} Nginx..."
+    systemctl restart nginx 2>/dev/null && log_success "Nginx перезапущен" || log_warning "Nginx не найден"
+
+    # Боты
+    echo ""
     if [ -d "/opt/telegram-bots-platform/bots" ]; then
+        log_info "Перезапуск ботов..."
         for bot in /opt/telegram-bots-platform/bots/*; do
             if [ -d "$bot" ]; then
+                bot_name=$(basename "$bot")
+                echo -e "  ${BLUE}▸${NC} $bot_name..."
                 cd "$bot"
-                docker compose restart 2>/dev/null || true
+                docker compose restart 2>/dev/null && echo -e "    ${GREEN}✓${NC} Перезапущен" || echo -e "    ${RED}✗${NC} Ошибка"
             fi
         done
     fi
 
-    log_success "All services restarted"
+    echo ""
+    log_success "Все сервисы перезапущены"
+    echo ""
 }
 
-# Main
+# Главная функция
 main() {
-    # Check if root
+    # Проверка root
     if [[ $EUID -ne 0 ]]; then
-        log_error "This script must be run as root"
-        echo "Use: sudo $0"
+        clear
+        echo ""
+        log_error "Этот скрипт должен запускаться от root"
+        echo ""
+        echo -e "  Используйте: ${CYAN}sudo $0${NC}"
+        echo ""
         exit 1
     fi
 
-    # Interactive mode
+    # Интерактивный режим
     while true; do
         show_banner
         show_main_menu
