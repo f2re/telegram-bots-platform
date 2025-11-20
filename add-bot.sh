@@ -468,7 +468,20 @@ create_database() {
 
     log_info "Создание базы данных: $DB_NAME"
 
-    sudo -u postgres psql << EOF
+    # Check if database already exists
+    if sudo -u postgres psql -lqt | cut -d \| -f 1 | grep -qw "$DB_NAME"; then
+        log_warning "База данных $DB_NAME уже существует"
+
+        # Get existing password if possible, otherwise use new one
+        if [ -f "/root/.platform/${BOT_NAME}_db_credentials" ]; then
+            source "/root/.platform/${BOT_NAME}_db_credentials"
+            log_info "Используются существующие учетные данные"
+        else
+            log_warning "Учетные данные не найдены, используется новый пароль"
+        fi
+    else
+        # Create database and user
+        sudo -u postgres psql 2>&1 << EOF | grep -v "already exists" || true
 CREATE DATABASE $DB_NAME;
 CREATE USER $DB_USER WITH ENCRYPTED PASSWORD '$DB_PASSWORD';
 GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;
@@ -476,7 +489,17 @@ GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;
 GRANT ALL ON SCHEMA public TO $DB_USER;
 EOF
 
-    log_success "База данных создана: $DB_NAME"
+        # Save credentials
+        mkdir -p "/root/.platform"
+        cat > "/root/.platform/${BOT_NAME}_db_credentials" << EOF
+DB_NAME=$DB_NAME
+DB_USER=$DB_USER
+DB_PASSWORD=$DB_PASSWORD
+EOF
+        chmod 600 "/root/.platform/${BOT_NAME}_db_credentials"
+
+        log_success "База данных создана: $DB_NAME"
+    fi
 }
 
 # Clone and setup repository
@@ -488,13 +511,31 @@ clone_and_setup_repo() {
     # Create bot directory
     mkdir -p "$BOT_DIR"/{logs,data}
 
-    # Clone repository
-    log_info "Клонирование $GIT_REPO..."
-    git clone "$GIT_REPO" "$BOT_DIR/app" || {
-        log_error "Не удалось клонировать репозиторий"
-        rm -rf "$BOT_DIR"
-        exit 1
-    }
+    # Check if app directory already exists
+    if [ -d "$BOT_DIR/app" ]; then
+        log_warning "Директория $BOT_DIR/app уже существует"
+        read -p "$(echo -e ${YELLOW}Удалить и клонировать заново? [y/N]: ${NC})" -n 1 -r
+        echo
+
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            log_info "Удаление существующей директории..."
+            rm -rf "$BOT_DIR/app"
+        else
+            log_info "Используем существующую директорию"
+            cd "$BOT_DIR/app"
+            git pull || log_warning "Не удалось обновить репозиторий"
+        fi
+    fi
+
+    # Clone repository if doesn't exist
+    if [ ! -d "$BOT_DIR/app" ]; then
+        log_info "Клонирование $GIT_REPO..."
+        git clone "$GIT_REPO" "$BOT_DIR/app" || {
+            log_error "Не удалось клонировать репозиторий"
+            rm -rf "$BOT_DIR"
+            exit 1
+        }
+    fi
 
     cd "$BOT_DIR/app"
 
@@ -516,7 +557,7 @@ clone_and_setup_repo() {
         fi
     fi
 
-    log_success "Репозиторий клонирован"
+    log_success "Репозиторий настроен"
 }
 
 # Setup environment
@@ -544,7 +585,7 @@ configure_nginx() {
 
     local NGINX_CONF="/etc/nginx/sites-available/${BOT_NAME}.conf"
 
-    # Create Nginx configuration
+    # Create Nginx configuration - HTTP only initially
     cat > "$NGINX_CONF" << EOF
 # $BOT_NAME - Generated on $(date)
 
@@ -564,7 +605,7 @@ upstream ${BOT_NAME}_frontend {
 EOF
     fi
 
-    # HTTP server (redirect to HTTPS)
+    # HTTP server - allow ACME challenge and serve content
     cat >> "$NGINX_CONF" << EOF
 server {
     listen 80;
@@ -659,13 +700,18 @@ EOF
     ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/${BOT_NAME}.conf"
 
     # Test Nginx configuration
-    nginx -t || {
+    if nginx -t 2>&1; then
+        log_success "Nginx configuration valid"
+        # Reload Nginx
+        systemctl reload nginx || log_warning "Could not reload Nginx"
+    else
         log_error "Nginx configuration test failed!"
+        log_warning "Removing invalid configuration..."
         rm -f "/etc/nginx/sites-enabled/${BOT_NAME}.conf"
-        exit 1
-    }
+        return 1
+    fi
 
-    log_success "Nginx настроен"
+    log_success "Nginx настроен (HTTP only, SSL will be added next)"
 }
 
 # Obtain SSL certificate with DuckDNS support
@@ -683,12 +729,10 @@ obtain_ssl_certificate() {
 obtain_ssl_certificate_standard() {
     log_info "Requesting certificate for $BOT_DOMAIN via HTTP-01 challenge..."
 
-    # Reload Nginx to serve ACME challenge
-    systemctl reload nginx
-
     # Obtain certificate
     certbot certonly \
-        --nginx \
+        --webroot \
+        --webroot-path=/var/www/html \
         --non-interactive \
         --agree-tos \
         --email "admin@$BOT_DOMAIN" \
