@@ -71,14 +71,33 @@ deploy_monitoring() {
         fi
     fi
 
-    # Copy monitoring stack from repository
-    REPO_MONITORING="/home/user/telegram-bots-platform/monitoring-stack"
+    # Find monitoring stack source (try multiple locations)
+    REPO_MONITORING=""
 
-    if [ ! -d "$REPO_MONITORING" ]; then
-        log_error "Monitoring stack source not found at $REPO_MONITORING"
-        log_error "Please ensure the repository is up to date"
+    # Try relative to script directory (development)
+    if [ -d "$SCRIPT_DIR/../monitoring-stack" ]; then
+        REPO_MONITORING="$(cd "$SCRIPT_DIR/../monitoring-stack" && pwd)"
+    # Try common repository locations
+    elif [ -d "/home/user/telegram-bots-platform/monitoring-stack" ]; then
+        REPO_MONITORING="/home/user/telegram-bots-platform/monitoring-stack"
+    elif [ -d "/opt/telegram-bots-platform/monitoring-stack" ]; then
+        REPO_MONITORING="/opt/telegram-bots-platform/monitoring-stack"
+    elif [ -d "$(pwd)/monitoring-stack" ]; then
+        REPO_MONITORING="$(pwd)/monitoring-stack"
+    fi
+
+    if [ -z "$REPO_MONITORING" ] || [ ! -d "$REPO_MONITORING" ]; then
+        log_error "Monitoring stack source not found!"
+        log_error "Searched locations:"
+        log_error "  - $SCRIPT_DIR/../monitoring-stack"
+        log_error "  - /home/user/telegram-bots-platform/monitoring-stack"
+        log_error "  - /opt/telegram-bots-platform/monitoring-stack"
+        log_error "  - $(pwd)/monitoring-stack"
+        log_info "Please run this script from the repository directory or ensure files are present"
         return 1
     fi
+
+    log_info "Found monitoring stack at: $REPO_MONITORING"
 
     # Create target directory
     mkdir -p "$(dirname "$MONITORING_DIR")"
