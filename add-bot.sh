@@ -204,9 +204,10 @@ update_env_file() {
         fi
     }
 
-    # Database credentials
-    update_or_add_var "DATABASE_URL" "postgresql://${db_user}:${db_password}@host.docker.internal:5432/${db_name}"
-    update_or_add_var "POSTGRES_HOST" "host.docker.internal"
+    # Database credentials - using static gateway IP
+    local pg_host="172.25.0.1"  # Static gateway from bots_shared_network
+    update_or_add_var "DATABASE_URL" "postgresql://${db_user}:${db_password}@${pg_host}:5432/${db_name}"
+    update_or_add_var "POSTGRES_HOST" "$pg_host"
     update_or_add_var "POSTGRES_PORT" "5432"
     update_or_add_var "POSTGRES_DB" "$db_name"
     update_or_add_var "POSTGRES_USER" "$db_user"
@@ -253,30 +254,29 @@ generate_docker_compose_auto() {
 
     local compose_file="$bot_dir/docker-compose.yml"
 
-    cat > "$compose_file" << 'EOF_COMPOSE_HEADER'
-version: '3.8'
+    # Determine build context based on structure
+    local build_context
+    if [ "$structure" = "multi-service" ]; then
+        build_context="./app/backend"
+    else
+        build_context="./app"
+    fi
 
+    cat > "$compose_file" << EOF
 services:
-EOF_COMPOSE_HEADER
-
-    # Backend service
-    cat >> "$compose_file" << EOF
   bot:
     build:
-      context: $([ "$structure" = "multi-service" ] && echo "./backend" || echo ".")
+      context: $build_context
     container_name: \${BOT_NAME}_bot
     restart: unless-stopped
     env_file:
       - .env
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       - ./logs:/app/logs
       - ./data:/app/data
     ports:
       - "\${BACKEND_PORT}:\${BACKEND_PORT}"
     networks:
-      - \${BOT_NAME}_network
       - shared_network
     logging:
       driver: "json-file"
@@ -288,11 +288,18 @@ EOF
 
     # Frontend service (if exists)
     if [ "$has_frontend" = "true" ]; then
+        local frontend_context
+        if [ "$structure" = "multi-service" ]; then
+            frontend_context="./app/frontend"
+        else
+            frontend_context="./app/packages/frontend"
+        fi
+
         cat >> "$compose_file" << EOF
 
   frontend:
     build:
-      context: $([ "$structure" = "multi-service" ] && echo "./frontend" || echo "./packages/frontend")
+      context: $frontend_context
       args:
         - VITE_API_URL=https://\${BOT_DOMAIN}
         - REACT_APP_API_URL=https://\${BOT_DOMAIN}
@@ -304,7 +311,7 @@ EOF
     ports:
       - "\${FRONTEND_PORT}:80"
     networks:
-      - \${BOT_NAME}_network
+      - shared_network
     depends_on:
       - bot
     logging:
@@ -316,15 +323,13 @@ EOF
 EOF
     fi
 
-    # Networks
-    cat >> "$compose_file" << EOF
+    # Networks - using only static shared network
+    cat >> "$compose_file" << 'EOF'
 
 networks:
-  \${BOT_NAME}_network:
-    driver: bridge
   shared_network:
     external: true
-    name: \${DOCKER_NETWORK_NAME:-bots_shared_network}
+    name: bots_shared_network
 EOF
 
     log_success "docker-compose.yml создан"
@@ -639,15 +644,23 @@ start_bot() {
         set +a
     fi
 
-    # Create shared network if not exists
-    local shared_network="${DOCKER_NETWORK_NAME:-bots_shared_network}"
-    log_info "Создание общей сети: $shared_network"
-    docker network create "$shared_network" 2>/dev/null || true
+    # Ensure static network exists with correct configuration
+    local shared_network="bots_shared_network"
+    local subnet="172.25.0.0/16"
+    local gateway="172.25.0.1"
 
-    # Create bot-specific network (required by docker-compose.yml)
-    local bot_network="${BOT_NAME}_network"
-    log_info "Создание сети бота: $bot_network"
-    docker network create "$bot_network" 2>/dev/null || true
+    log_info "Проверка статической сети: $shared_network"
+
+    if ! docker network ls --format '{{.Name}}' | grep -q "^${shared_network}$"; then
+        log_info "Создание статической сети с фиксированным gateway..."
+        docker network create \
+            --driver bridge \
+            --subnet="$subnet" \
+            --gateway="$gateway" \
+            "$shared_network" || log_warning "Не удалось создать сеть (возможно уже существует)"
+    else
+        log_success "Статическая сеть существует"
+    fi
 
     # Build and start
     log_info "Сборка Docker образов..."
@@ -657,6 +670,7 @@ start_bot() {
     docker compose up -d
 
     log_success "Бот запущен"
+    log_info "Gateway IP для PostgreSQL: $gateway"
 }
 
 # Save bot info
