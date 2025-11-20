@@ -398,7 +398,20 @@ create_database() {
 
     log_info "Создание базы данных: $DB_NAME"
 
-    sudo -u postgres psql << EOF
+    # Check if database already exists
+    if sudo -u postgres psql -lqt | cut -d \| -f 1 | grep -qw "$DB_NAME"; then
+        log_warning "База данных $DB_NAME уже существует"
+
+        # Get existing password if possible, otherwise use new one
+        if [ -f "/root/.platform/${BOT_NAME}_db_credentials" ]; then
+            source "/root/.platform/${BOT_NAME}_db_credentials"
+            log_info "Используются существующие учетные данные"
+        else
+            log_warning "Учетные данные не найдены, используется новый пароль"
+        fi
+    else
+        # Create database and user
+        sudo -u postgres psql 2>&1 << EOF | grep -v "already exists" || true
 CREATE DATABASE $DB_NAME;
 CREATE USER $DB_USER WITH ENCRYPTED PASSWORD '$DB_PASSWORD';
 GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;
@@ -406,7 +419,17 @@ GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;
 GRANT ALL ON SCHEMA public TO $DB_USER;
 EOF
 
-    log_success "База данных создана: $DB_NAME"
+        # Save credentials
+        mkdir -p "/root/.platform"
+        cat > "/root/.platform/${BOT_NAME}_db_credentials" << EOF
+DB_NAME=$DB_NAME
+DB_USER=$DB_USER
+DB_PASSWORD=$DB_PASSWORD
+EOF
+        chmod 600 "/root/.platform/${BOT_NAME}_db_credentials"
+
+        log_success "База данных создана: $DB_NAME"
+    fi
 }
 
 # Clone and setup repository
@@ -418,13 +441,31 @@ clone_and_setup_repo() {
     # Create bot directory
     mkdir -p "$BOT_DIR"/{logs,data}
 
-    # Clone repository
-    log_info "Клонирование $GIT_REPO..."
-    git clone "$GIT_REPO" "$BOT_DIR/app" || {
-        log_error "Не удалось клонировать репозиторий"
-        rm -rf "$BOT_DIR"
-        exit 1
-    }
+    # Check if app directory already exists
+    if [ -d "$BOT_DIR/app" ]; then
+        log_warning "Директория $BOT_DIR/app уже существует"
+        read -p "$(echo -e ${YELLOW}Удалить и клонировать заново? [y/N]: ${NC})" -n 1 -r
+        echo
+
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            log_info "Удаление существующей директории..."
+            rm -rf "$BOT_DIR/app"
+        else
+            log_info "Используем существующую директорию"
+            cd "$BOT_DIR/app"
+            git pull || log_warning "Не удалось обновить репозиторий"
+        fi
+    fi
+
+    # Clone repository if doesn't exist
+    if [ ! -d "$BOT_DIR/app" ]; then
+        log_info "Клонирование $GIT_REPO..."
+        git clone "$GIT_REPO" "$BOT_DIR/app" || {
+            log_error "Не удалось клонировать репозиторий"
+            rm -rf "$BOT_DIR"
+            exit 1
+        }
+    fi
 
     cd "$BOT_DIR/app"
 
@@ -446,7 +487,7 @@ clone_and_setup_repo() {
         fi
     fi
 
-    log_success "Репозиторий клонирован"
+    log_success "Репозиторий настроен"
 }
 
 # Setup environment
@@ -474,7 +515,7 @@ configure_nginx() {
 
     local NGINX_CONF="/etc/nginx/sites-available/${BOT_NAME}.conf"
 
-    # Create Nginx configuration
+    # Create Nginx configuration - HTTP only initially
     cat > "$NGINX_CONF" << EOF
 # $BOT_NAME - Generated on $(date)
 
@@ -494,45 +535,17 @@ upstream ${BOT_NAME}_frontend {
 EOF
     fi
 
-    # HTTP server (redirect to HTTPS)
+    # HTTP server - allow ACME challenge and serve content
     cat >> "$NGINX_CONF" << EOF
 server {
     listen 80;
     listen [::]:80;
     server_name $BOT_DOMAIN;
 
+    # ACME challenge for Let's Encrypt
     location /.well-known/acme-challenge/ {
         root /var/www/html;
     }
-
-    location / {
-        return 301 https://\$server_name\$request_uri;
-    }
-}
-
-# HTTPS server
-server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    server_name $BOT_DOMAIN;
-
-    # SSL will be configured by certbot
-    ssl_certificate /etc/letsencrypt/live/$BOT_DOMAIN/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/$BOT_DOMAIN/privkey.pem;
-
-    include /etc/nginx/snippets/ssl-params.conf;
-
-    # Security headers
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-
-    # Logging
-    access_log /var/log/nginx/${BOT_NAME}_access.log;
-    error_log /var/log/nginx/${BOT_NAME}_error.log;
-
-    # Rate limiting
-    limit_req zone=api burst=20 nodelay;
 
 EOF
 
@@ -587,13 +600,18 @@ EOF
     ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/${BOT_NAME}.conf"
 
     # Test Nginx configuration
-    nginx -t || {
+    if nginx -t 2>&1; then
+        log_success "Nginx configuration valid"
+        # Reload Nginx
+        systemctl reload nginx || log_warning "Could not reload Nginx"
+    else
         log_error "Nginx configuration test failed!"
+        log_warning "Removing invalid configuration..."
         rm -f "/etc/nginx/sites-enabled/${BOT_NAME}.conf"
-        exit 1
-    }
+        return 1
+    fi
 
-    log_success "Nginx настроен"
+    log_success "Nginx настроен (HTTP only, SSL will be added next)"
 }
 
 # Obtain SSL certificate
@@ -602,31 +620,126 @@ obtain_ssl_certificate() {
 
     log_info "Requesting certificate for $BOT_DOMAIN..."
 
-    # Reload Nginx to serve ACME challenge
-    systemctl reload nginx
-
     # Obtain certificate
     certbot certonly \
-        --nginx \
+        --webroot \
+        --webroot-path=/var/www/html \
         --non-interactive \
         --agree-tos \
         --email "admin@$BOT_DOMAIN" \
         --domains "$BOT_DOMAIN" \
         || {
-            log_warning "Failed to obtain SSL certificate. Using self-signed certificate."
+            log_warning "Failed to obtain SSL certificate. Creating self-signed certificate..."
 
             # Create self-signed certificate
             mkdir -p "/etc/letsencrypt/live/$BOT_DOMAIN"
             openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
                 -keyout "/etc/letsencrypt/live/$BOT_DOMAIN/privkey.pem" \
                 -out "/etc/letsencrypt/live/$BOT_DOMAIN/fullchain.pem" \
-                -subj "/CN=$BOT_DOMAIN"
+                -subj "/CN=$BOT_DOMAIN" 2>/dev/null
         }
 
-    # Reload Nginx with SSL
-    systemctl reload nginx
+    # Now update Nginx configuration to add HTTPS
+    local NGINX_CONF="/etc/nginx/sites-available/${BOT_NAME}.conf"
 
-    log_success "SSL настроен"
+    log_info "Adding HTTPS configuration to Nginx..."
+
+    # Update HTTP server to redirect to HTTPS
+    sed -i '/server_name '"$BOT_DOMAIN"';/a\
+\
+    # Redirect all HTTP to HTTPS except ACME challenge\
+    location / {\
+        return 301 https://$server_name$request_uri;\
+    }' "$NGINX_CONF"
+
+    # Remove old proxy_pass locations from HTTP server (they'll be in HTTPS)
+    sed -i '/# Frontend/,/^    }/d; /# Backend only/,/^    }/d; /# Backend API/,/^    }/d' "$NGINX_CONF"
+
+    # Add HTTPS server block
+    cat >> "$NGINX_CONF" << EOF
+
+# HTTPS server
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name $BOT_DOMAIN;
+
+    # SSL certificates
+    ssl_certificate /etc/letsencrypt/live/$BOT_DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$BOT_DOMAIN/privkey.pem;
+
+    # SSL configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+
+    # Security headers
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    # Logging
+    access_log /var/log/nginx/${BOT_NAME}_access.log;
+    error_log /var/log/nginx/${BOT_NAME}_error.log;
+
+EOF
+
+    if [ -n "${FRONTEND_PORT:-}" ]; then
+        cat >> "$NGINX_CONF" << EOF
+    # Frontend
+    location / {
+        proxy_pass http://${BOT_NAME}_frontend;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    # Backend API
+    location /api {
+        proxy_pass http://${BOT_NAME}_backend;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+
+        # WebSocket support
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+EOF
+    else
+        cat >> "$NGINX_CONF" << EOF
+    # Backend only
+    location / {
+        proxy_pass http://${BOT_NAME}_backend;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+
+        # WebSocket support
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+EOF
+    fi
+
+    cat >> "$NGINX_CONF" << EOF
+}
+EOF
+
+    # Test and reload Nginx
+    if nginx -t 2>&1; then
+        systemctl reload nginx
+        log_success "SSL настроен и Nginx перезагружен"
+    else
+        log_error "Nginx configuration test failed after adding SSL!"
+        return 1
+    fi
 }
 
 # Start bot
