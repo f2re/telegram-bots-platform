@@ -188,6 +188,15 @@ setup_postgresql() {
     systemctl enable postgresql
 
     log_success "PostgreSQL настроен для статической сети (172.25.0.1)"
+
+    # Configure UFW to allow Docker subnet traffic
+    log_info "Настройка UFW для Docker подсети..."
+    if command -v ufw &> /dev/null && ufw status | grep -q "Status: active"; then
+        ufw allow from 172.25.0.0/16 to any port 5432 comment 'PostgreSQL Docker' 2>/dev/null || true
+        ufw allow from 172.25.0.0/16 comment 'Docker bots_shared_network' 2>/dev/null || true
+        ufw reload 2>/dev/null || true
+        log_success "UFW правила добавлены для Docker подсети"
+    fi
 }
 
 # Установка Docker

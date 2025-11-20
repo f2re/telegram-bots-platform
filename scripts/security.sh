@@ -18,8 +18,12 @@ update_firewall_rules() {
     ufw allow 80/tcp comment 'HTTP'
     ufw allow 443/tcp comment 'HTTPS'
     ufw allow from 127.0.0.1 to any port 5432 comment 'PostgreSQL Local'
+    ufw allow from 172.25.0.0/16 to any port 5432 comment 'PostgreSQL Docker'
     ufw allow 3000/tcp comment 'Grafana'
-    
+
+    # Docker subnet (allow all traffic from containers)
+    ufw allow from 172.25.0.0/16 comment 'Docker bots_shared_network'
+
     # Enable firewall
     ufw --force enable
 }
