@@ -45,16 +45,23 @@ show_header() {
 show_menu() {
     echo -e "${BLUE}Выберите действие:${NC}"
     echo ""
+    echo -e "  ${YELLOW}▸ УПРАВЛЕНИЕ${NC}"
     echo -e "  ${GREEN}1)${NC} 🚀 Развернуть систему мониторинга"
     echo -e "  ${GREEN}2)${NC} ▶️  Запустить мониторинг"
     echo -e "  ${GREEN}3)${NC} ⏸️  Остановить мониторинг"
     echo -e "  ${GREEN}4)${NC} 🔄 Перезапустить мониторинг"
-    echo -e "  ${GREEN}5)${NC} 📊 Показать статус"
-    echo -e "  ${GREEN}6)${NC} 🔍 Сканировать и добавить всех ботов"
-    echo -e "  ${GREEN}7)${NC} 📋 Показать логи"
-    echo -e "  ${GREEN}8)${NC} 🔐 Показать учетные данные"
-    echo -e "  ${GREEN}9)${NC} 🗑️  Удалить систему мониторинга"
-    echo -e "  ${RED}0)${NC} 🚪 Выход"
+    echo ""
+    echo -e "  ${YELLOW}▸ БОТЫ${NC}"
+    echo -e "  ${GREEN}5)${NC} 🔧 Создать bot_info.json для существующих ботов"
+    echo -e "  ${GREEN}6)${NC} 🔍 Сканировать и добавить всех ботов в мониторинг"
+    echo ""
+    echo -e "  ${YELLOW}▸ ИНФОРМАЦИЯ${NC}"
+    echo -e "  ${GREEN}7)${NC} 📊 Показать статус"
+    echo -e "  ${GREEN}8)${NC} 📋 Показать логи"
+    echo -e "  ${GREEN}9)${NC} 🔐 Показать учетные данные"
+    echo ""
+    echo -e "  ${RED}10)${NC} 🗑️  Удалить систему мониторинга"
+    echo -e "  ${RED}0)${NC}  🚪 Выход"
     echo ""
 }
 
@@ -245,6 +252,17 @@ show_status() {
     echo ""
 }
 
+generate_bot_info() {
+    log_step "🔧 Генерация bot_info.json для существующих ботов..."
+
+    if [ ! -f "$SCRIPT_DIR/generate-bot-info.sh" ]; then
+        log_error "Скрипт генерации не найден"
+        return 1
+    fi
+
+    bash "$SCRIPT_DIR/generate-bot-info.sh"
+}
+
 scan_bots() {
     log_step "🔍 Сканирование ботов для мониторинга..."
 
@@ -348,7 +366,7 @@ main() {
         show_header
         show_menu
 
-        read -p "Введите выбор [0-9]: " choice
+        read -p "Введите выбор [0-10]: " choice
         echo ""
 
         case $choice in
@@ -356,11 +374,12 @@ main() {
             2) start_monitoring ;;
             3) stop_monitoring ;;
             4) restart_monitoring ;;
-            5) show_status ;;
+            5) generate_bot_info ;;
             6) scan_bots ;;
-            7) show_logs ;;
-            8) show_credentials ;;
-            9) remove_monitoring ;;
+            7) show_status ;;
+            8) show_logs ;;
+            9) show_credentials ;;
+            10) remove_monitoring ;;
             0)
                 log_info "До свидания!"
                 exit 0
@@ -385,13 +404,14 @@ else
         start) start_monitoring ;;
         stop) stop_monitoring ;;
         restart) restart_monitoring ;;
-        status) show_status ;;
+        generate) generate_bot_info ;;
         scan) scan_bots ;;
+        status) show_status ;;
         logs) show_logs ;;
         credentials) show_credentials ;;
         remove) remove_monitoring ;;
         *)
-            echo "Использование: $0 {deploy|start|stop|restart|status|scan|logs|credentials|remove}"
+            echo "Использование: $0 {deploy|start|stop|restart|generate|scan|status|logs|credentials|remove}"
             exit 1
             ;;
     esac
