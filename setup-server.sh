@@ -451,21 +451,23 @@ POSTGRES_PORT=5432
 EOF
     chmod 600 /root/.platform/postgres_credentials
     
-    # Configure pg_hba.conf for local connections
+    # Configure pg_hba.conf for local and static network connections
     cat >> /etc/postgresql/$POSTGRES_VERSION/main/pg_hba.conf << 'EOF'
 
 # Telegram Bots Platform Configuration
 local   all             all                                     scram-sha-256
 host    all             all             127.0.0.1/32            scram-sha-256
 host    all             all             ::1/128                 scram-sha-256
-host    all             all             172.16.0.0/12           scram-sha-256
+# Static Docker Network (bots_shared_network: 172.25.0.0/16)
+host    all             all             172.25.0.0/16           scram-sha-256
 EOF
-    
-    # Configure postgresql.conf with values from config
+
+    # Configure postgresql.conf with values from config and static gateway
     cat >> /etc/postgresql/$POSTGRES_VERSION/main/postgresql.conf << EOF
 
 # Telegram Bots Platform Configuration
-listen_addresses = '$POSTGRES_LISTEN_ADDRESSES'
+# Listen on localhost and static Docker network gateway (172.25.0.1)
+listen_addresses = 'localhost,172.25.0.1'
 max_connections = $POSTGRES_MAX_CONNECTIONS
 shared_buffers = $POSTGRES_SHARED_BUFFERS
 effective_cache_size = $POSTGRES_EFFECTIVE_CACHE_SIZE
@@ -484,8 +486,57 @@ EOF
     systemctl enable postgresql
     
     log_success "PostgreSQL installed and configured"
-    
+
     echo -e "\n${YELLOW}📋 PostgreSQL credentials saved to: /root/.platform/postgres_credentials${NC}\n"
+}
+
+# Setup static Docker network
+setup_static_network() {
+    log_step "Setting up Static Docker Network"
+
+    local network_name="bots_shared_network"
+    local subnet="172.25.0.0/16"
+    local gateway="172.25.0.1"
+
+    log_info "Creating permanent static network: $network_name"
+    log_info "  Subnet: $subnet"
+    log_info "  Gateway: $gateway (PostgreSQL listens here)"
+
+    # Check if network already exists
+    if docker network ls --format '{{.Name}}' | grep -q "^${network_name}$"; then
+        log_warning "Network $network_name already exists"
+
+        # Verify configuration
+        local current_subnet=$(docker network inspect "$network_name" --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null || echo "")
+        local current_gateway=$(docker network inspect "$network_name" --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}' 2>/dev/null || echo "")
+
+        if [ "$current_subnet" = "$subnet" ] && [ "$current_gateway" = "$gateway" ]; then
+            log_success "Network already configured correctly"
+        else
+            log_warning "Network exists with different settings, keeping existing configuration"
+        fi
+    else
+        # Create network
+        if docker network create \
+            --driver bridge \
+            --subnet="$subnet" \
+            --gateway="$gateway" \
+            "$network_name" > /dev/null 2>&1; then
+
+            log_success "Static network created: $network_name"
+            log_success "  Gateway: $gateway (permanent, never changes)"
+        else
+            log_error "Failed to create network"
+            return 1
+        fi
+    fi
+
+    echo -e "\n${CYAN}📋 Network Configuration:${NC}"
+    echo -e "  ${YELLOW}Network Name:${NC} $network_name"
+    echo -e "  ${YELLOW}Subnet:${NC} $subnet"
+    echo -e "  ${YELLOW}Gateway:${NC} $gateway"
+    echo -e "  ${YELLOW}PostgreSQL:${NC} Accessible at $gateway:5432"
+    echo ""
 }
 
 # Install Nginx
@@ -964,6 +1015,7 @@ main() {
     fi
     
     install_docker
+    setup_static_network
     install_postgresql
     install_nginx
     
