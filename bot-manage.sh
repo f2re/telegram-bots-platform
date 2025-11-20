@@ -174,16 +174,57 @@ show_bot_info() {
 start_bot() {
     local bot_name=$1
     local bot_dir="$BOTS_DIR/$bot_name"
-    
+
     if [ ! -d "$bot_dir" ]; then
         log_error "Бот '$bot_name' не найден"
         return 1
     fi
-    
+
     log_info "Запуск бота: $bot_name"
     cd "$bot_dir"
+
+    # Ensure .env file exists
+    if [ ! -f ".env" ]; then
+        log_error ".env файл не найден в $bot_dir"
+        return 1
+    fi
+
+    # Load .env to get actual network names
+    set -a
+    source .env
+    set +a
+
+    # Ensure BOT_NAME is set in .env (use directory name if not set)
+    if [ -z "$BOT_NAME" ]; then
+        echo "BOT_NAME=$bot_name" >> .env
+        export BOT_NAME="$bot_name"
+        log_info "Добавлено BOT_NAME=$bot_name в .env"
+    fi
+
+    # Create shared network (external network referenced in docker-compose.yml)
+    local shared_network="${DOCKER_NETWORK_NAME:-bots_shared_network}"
+    if ! docker network ls --format '{{.Name}}' | grep -q "^${shared_network}$"; then
+        log_info "Создание общей сети: $shared_network"
+        docker network create "$shared_network" || log_warning "Не удалось создать сеть $shared_network"
+    fi
+
+    # Create bot-specific network (using BOT_NAME from .env)
+    local bot_network="${BOT_NAME}_network"
+    if ! docker network ls --format '{{.Name}}' | grep -q "^${bot_network}$"; then
+        log_info "Создание сети бота: $bot_network"
+        docker network create "$bot_network" || log_warning "Не удалось создать сеть $bot_network"
+    fi
+
+    # Start bot
+    log_info "Запуск контейнеров..."
     docker compose up -d
-    log_success "Бот $bot_name запущен"
+
+    if [ $? -eq 0 ]; then
+        log_success "Бот $bot_name запущен"
+    else
+        log_error "Ошибка при запуске бота"
+        return 1
+    fi
 }
 
 # Stop bot
@@ -206,14 +247,35 @@ stop_bot() {
 restart_bot() {
     local bot_name=$1
     local bot_dir="$BOTS_DIR/$bot_name"
-    
+
     if [ ! -d "$bot_dir" ]; then
         log_error "Бот '$bot_name' не найден"
         return 1
     fi
-    
+
     log_info "Перезапуск бота: $bot_name"
     cd "$bot_dir"
+
+    # Ensure networks exist before restart
+    if [ -f ".env" ]; then
+        # Load .env
+        set -a
+        source .env
+        set +a
+
+        if [ -z "$BOT_NAME" ]; then
+            echo "BOT_NAME=$bot_name" >> .env
+            export BOT_NAME="$bot_name"
+        fi
+
+        # Create networks if they don't exist
+        local shared_network="${DOCKER_NETWORK_NAME:-bots_shared_network}"
+        docker network create "$shared_network" 2>/dev/null || true
+
+        local bot_network="${BOT_NAME}_network"
+        docker network create "$bot_network" 2>/dev/null || true
+    fi
+
     docker compose restart
     log_success "Бот $bot_name перезапущен"
 }
@@ -267,19 +329,38 @@ update_bot() {
 rebuild_bot() {
     local bot_name=$1
     local bot_dir="$BOTS_DIR/$bot_name"
-    
+
     if [ ! -d "$bot_dir" ]; then
         log_error "Бот '$bot_name' не найден"
         return 1
     fi
-    
+
     log_info "Пересборка бота: $bot_name"
     cd "$bot_dir"
-    
+
+    # Load .env and ensure networks exist
+    if [ -f ".env" ]; then
+        set -a
+        source .env
+        set +a
+
+        if [ -z "$BOT_NAME" ]; then
+            echo "BOT_NAME=$bot_name" >> .env
+            export BOT_NAME="$bot_name"
+        fi
+
+        # Create networks
+        local shared_network="${DOCKER_NETWORK_NAME:-bots_shared_network}"
+        docker network create "$shared_network" 2>/dev/null || true
+
+        local bot_network="${BOT_NAME}_network"
+        docker network create "$bot_network" 2>/dev/null || true
+    fi
+
     docker compose down
     docker compose build --no-cache
     docker compose up -d
-    
+
     log_success "Бот $bot_name пересобран"
 }
 
