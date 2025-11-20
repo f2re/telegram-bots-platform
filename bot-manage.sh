@@ -189,30 +189,30 @@ start_bot() {
         return 1
     fi
 
-    # Load .env to get actual network names
+    # Load .env
     set -a
     source .env
     set +a
 
-    # Ensure BOT_NAME is set in .env (use directory name if not set)
+    # Ensure BOT_NAME is set in .env
     if [ -z "$BOT_NAME" ]; then
         echo "BOT_NAME=$bot_name" >> .env
         export BOT_NAME="$bot_name"
         log_info "Добавлено BOT_NAME=$bot_name в .env"
     fi
 
-    # Create shared network (external network referenced in docker-compose.yml)
-    local shared_network="${DOCKER_NETWORK_NAME:-bots_shared_network}"
-    if ! docker network ls --format '{{.Name}}' | grep -q "^${shared_network}$"; then
-        log_info "Создание общей сети: $shared_network"
-        docker network create "$shared_network" || log_warning "Не удалось создать сеть $shared_network"
-    fi
+    # Ensure static network exists with correct configuration
+    local shared_network="bots_shared_network"
+    local subnet="172.25.0.0/16"
+    local gateway="172.25.0.1"
 
-    # Create bot-specific network (using BOT_NAME from .env)
-    local bot_network="${BOT_NAME}_network"
-    if ! docker network ls --format '{{.Name}}' | grep -q "^${bot_network}$"; then
-        log_info "Создание сети бота: $bot_network"
-        docker network create "$bot_network" || log_warning "Не удалось создать сеть $bot_network"
+    if ! docker network ls --format '{{.Name}}' | grep -q "^${shared_network}$"; then
+        log_info "Создание статической сети: $shared_network (gateway: $gateway)"
+        docker network create \
+            --driver bridge \
+            --subnet="$subnet" \
+            --gateway="$gateway" \
+            "$shared_network" 2>/dev/null || log_warning "Сеть уже существует"
     fi
 
     # Start bot
@@ -258,7 +258,6 @@ restart_bot() {
 
     # Ensure networks exist before restart
     if [ -f ".env" ]; then
-        # Load .env
         set -a
         source .env
         set +a
@@ -268,12 +267,16 @@ restart_bot() {
             export BOT_NAME="$bot_name"
         fi
 
-        # Create networks if they don't exist
-        local shared_network="${DOCKER_NETWORK_NAME:-bots_shared_network}"
-        docker network create "$shared_network" 2>/dev/null || true
+        # Ensure static network exists
+        local shared_network="bots_shared_network"
+        local subnet="172.25.0.0/16"
+        local gateway="172.25.0.1"
 
-        local bot_network="${BOT_NAME}_network"
-        docker network create "$bot_network" 2>/dev/null || true
+        docker network create \
+            --driver bridge \
+            --subnet="$subnet" \
+            --gateway="$gateway" \
+            "$shared_network" 2>/dev/null || true
     fi
 
     docker compose restart
@@ -349,12 +352,16 @@ rebuild_bot() {
             export BOT_NAME="$bot_name"
         fi
 
-        # Create networks
-        local shared_network="${DOCKER_NETWORK_NAME:-bots_shared_network}"
-        docker network create "$shared_network" 2>/dev/null || true
+        # Ensure static network exists
+        local shared_network="bots_shared_network"
+        local subnet="172.25.0.0/16"
+        local gateway="172.25.0.1"
 
-        local bot_network="${BOT_NAME}_network"
-        docker network create "$bot_network" 2>/dev/null || true
+        docker network create \
+            --driver bridge \
+            --subnet="$subnet" \
+            --gateway="$gateway" \
+            "$shared_network" 2>/dev/null || true
     fi
 
     docker compose down
