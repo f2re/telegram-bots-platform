@@ -584,7 +584,7 @@ configure_nginx() {
 
     local NGINX_CONF="/etc/nginx/sites-available/${BOT_NAME}.conf"
 
-    # Create Nginx configuration - HTTP only initially
+    # Create Nginx configuration - HTTP only initially for certbot challenge
     cat > "$NGINX_CONF" << EOF
 # $BOT_NAME - Generated on $(date)
 
@@ -604,12 +604,82 @@ upstream ${BOT_NAME}_frontend {
 EOF
     fi
 
-    # HTTP server - allow ACME challenge and serve content
+    # HTTP server - needed for ACME challenge and will redirect to HTTPS after SSL is obtained
     cat >> "$NGINX_CONF" << EOF
 server {
     listen 80;
     listen [::]:80;
     server_name $BOT_DOMAIN;
+
+    # Allow ACME challenge
+    location ~ /.well-known/acme-challenge {
+        allow all;
+        root /var/www/html;
+    }
+
+    # Redirect to HTTPS after SSL is set up
+    location / {
+        return 301 https://\$server_name\$request_uri;
+    }
+}
+EOF
+
+    # Enable site
+    ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/${BOT_NAME}.conf"
+
+    # Test Nginx configuration
+    if nginx -t 2>&1; then
+        log_success "Nginx HTTP configuration valid"
+        # Reload Nginx
+        systemctl reload nginx || log_warning "Could not reload Nginx"
+    else
+        log_error "Nginx configuration test failed!"
+        log_warning "Removing invalid configuration..."
+        rm -f "/etc/nginx/sites-enabled/${BOT_NAME}.conf"
+        return 1
+    fi
+
+    log_success "Nginx HTTP настроен (SSL будет добавлен после получения сертификата)"
+}
+
+# Configure HTTPS Nginx after SSL certificate is obtained
+configure_nginx_https() {
+    log_step "Настройка HTTPS для Nginx"
+
+    local NGINX_CONF="/etc/nginx/sites-available/${BOT_NAME}.conf"
+
+    # Create full Nginx configuration with HTTPS
+    cat > "$NGINX_CONF" << EOF
+# $BOT_NAME - Generated on $(date)
+
+upstream ${BOT_NAME}_backend {
+    server 127.0.0.1:${BACKEND_PORT};
+}
+
+EOF
+
+    # Add frontend upstream if needed
+    if [ -n "${FRONTEND_PORT:-}" ]; then
+        cat >> "$NGINX_CONF" << EOF
+upstream ${BOT_NAME}_frontend {
+    server 127.0.0.1:${FRONTEND_PORT};
+}
+
+EOF
+    fi
+
+    # HTTP server - needed for ACME challenge
+    cat >> "$NGINX_CONF" << EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $BOT_DOMAIN;
+
+    # Allow ACME challenge
+    location ~ /.well-known/acme-challenge {
+        allow all;
+        root /var/www/html;
+    }
 
     location / {
         return 301 https://\$server_name\$request_uri;
@@ -695,22 +765,20 @@ EOF
 }
 EOF
 
-    # Enable site
+    # Enable site (already linked, but refresh to ensure it's still there)
     ln -sf "$NGINX_CONF" "/etc/nginx/sites-enabled/${BOT_NAME}.conf"
 
     # Test Nginx configuration
     if nginx -t 2>&1; then
-        log_success "Nginx configuration valid"
+        log_success "Nginx HTTPS configuration valid"
         # Reload Nginx
         systemctl reload nginx || log_warning "Could not reload Nginx"
     else
-        log_error "Nginx configuration test failed!"
-        log_warning "Removing invalid configuration..."
-        rm -f "/etc/nginx/sites-enabled/${BOT_NAME}.conf"
+        log_error "Nginx HTTPS configuration test failed!"
         return 1
     fi
 
-    log_success "Nginx настроен (HTTP only, SSL will be added next)"
+    log_success "Nginx HTTPS настроен"
 }
 
 # Obtain SSL certificate with DuckDNS support
@@ -742,8 +810,8 @@ obtain_ssl_certificate_standard() {
             return 1
         }
 
-    # Reload Nginx with SSL
-    systemctl reload nginx
+    # Configure HTTPS Nginx after certificate is obtained
+    configure_nginx_https
 
     log_success "SSL сертификат получен для $BOT_DOMAIN"
 }
@@ -751,13 +819,13 @@ obtain_ssl_certificate_standard() {
 # DuckDNS SSL certificate (DNS-01)
 obtain_ssl_certificate_duckdns() {
     log_info "Requesting certificate for $BOT_DOMAIN via DNS-01 challenge (DuckDNS)..."
-    
+
     # Setup DuckDNS token
     setup_duckdns_token
-    
+
     # Install DuckDNS plugin
     install_duckdns_plugin
-    
+
     # Obtain certificate using DNS challenge
     certbot certonly \
         --dns-duckdns \
@@ -777,25 +845,28 @@ obtain_ssl_certificate_duckdns() {
         }
 
     log_success "SSL сертификат получен для $BOT_DOMAIN через DNS-01 challenge"
-    
-    # Reload Nginx with SSL
-    systemctl reload nginx
+
+    # Configure HTTPS Nginx after certificate is obtained
+    configure_nginx_https
 }
 
 # Create self-signed certificate as fallback
 create_self_signed_certificate() {
     log_warning "Creating self-signed certificate for $BOT_DOMAIN..."
-    
+
     # Create directory
     mkdir -p "/etc/letsencrypt/live/$BOT_DOMAIN"
-    
+
     # Generate self-signed certificate
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
         -keyout "/etc/letsencrypt/live/$BOT_DOMAIN/privkey.pem" \
         -out "/etc/letsencrypt/live/$BOT_DOMAIN/fullchain.pem" \
         -subj "/CN=$BOT_DOMAIN"
-    
+
     log_warning "Self-signed certificate created. Consider obtaining a valid certificate later."
+
+    # Configure HTTPS Nginx with self-signed certificate
+    configure_nginx_https
 }
 
 # Start bot
